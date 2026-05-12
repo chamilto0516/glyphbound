@@ -1,6 +1,11 @@
+from __future__ import annotations
+
 import random
 from dataclasses import dataclass, field
-from typing import List, Set, Tuple
+from typing import TYPE_CHECKING, List, Optional, Set, Tuple
+
+if TYPE_CHECKING:
+    from .themes import Theme
 
 MAP_WIDTH  = 500
 MAP_HEIGHT = 500
@@ -10,23 +15,6 @@ FLOOR       = 1
 WALL        = 2
 DOOR_CLOSED = 3
 DOOR_OPEN   = 4
-
-TILE_GLYPHS: dict = {
-    VOID:        " ",
-    FLOOR:       ".",
-    WALL:        "#",
-    DOOR_CLOSED: "+",
-    DOOR_OPEN:   "/",
-}
-
-PARTY_GLYPH = "@"
-
-MIN_ROOMS  = 8
-MAX_ROOMS  = 15
-MIN_ROOM_W = 6
-MAX_ROOM_W = 16
-MIN_ROOM_H = 4
-MAX_ROOM_H = 10
 
 
 @dataclass
@@ -40,7 +28,7 @@ class Room:
     def center(self) -> Tuple[int, int]:
         return self.x + self.w // 2, self.y + self.h // 2
 
-    def overlaps(self, other: "Room", margin: int = 2) -> bool:
+    def overlaps(self, other: Room, margin: int = 2) -> bool:
         return (
             self.x - margin < other.x + other.w and
             self.x + self.w + margin > other.x and
@@ -55,8 +43,10 @@ class Dungeon:
     height: int = MAP_HEIGHT
     tiles: List[List[int]] = field(default_factory=list)
     rooms: List[Room] = field(default_factory=list)
+    branch_rooms: List[Room] = field(default_factory=list)
     party_x: int = 0
     party_y: int = 0
+    theme: Optional[Theme] = field(default=None)
 
     def tile_at(self, x: int, y: int) -> int:
         if 0 <= x < self.width and 0 <= y < self.height:
@@ -73,33 +63,153 @@ class Dungeon:
             self.party_x, self.party_y = nx, ny
 
 
-def generate_dungeon(seed: int = None) -> Dungeon:
+def generate_dungeon(seed: int = None, theme: Theme = None) -> Dungeon:
     rng = random.Random(seed)
+
+    if theme is None:
+        from .themes import ALL_THEMES
+        theme = rng.choice(ALL_THEMES)
+
     dungeon = Dungeon()
     dungeon.tiles = [[VOID] * MAP_WIDTH for _ in range(MAP_HEIGHT)]
 
-    target = rng.randint(MIN_ROOMS, MAX_ROOMS)
+    target = rng.randint(theme.min_rooms, theme.max_rooms)
     rooms: List[Room] = []
     room_walls: Set[Tuple[int, int]] = set()
     attempts = 0
 
+    # Phase 1 — place rooms
     while len(rooms) < target and attempts < 2000:
         attempts += 1
-        w = rng.randint(MIN_ROOM_W, MAX_ROOM_W)
-        h = rng.randint(MIN_ROOM_H, MAX_ROOM_H)
+        w = rng.randint(theme.min_room_w, theme.max_room_w)
+        h = rng.randint(theme.min_room_h, theme.max_room_h)
         x = rng.randint(2, MAP_WIDTH  - w - 3)
         y = rng.randint(2, MAP_HEIGHT - h - 3)
         room = Room(x, y, w, h)
-        if any(room.overlaps(r) for r in rooms):
+        if any(room.overlaps(r, margin=1) for r in rooms):
+            continue
+        if rooms and not _room_within_corridor_range(room, rooms, theme.max_corridor):
             continue
         _carve_room(dungeon.tiles, room, room_walls)
-        if rooms:
-            _carve_corridor(dungeon.tiles, rooms[-1], room, rng, room_walls)
         rooms.append(room)
+
+    # Phase 2 — connect all rooms via minimum spanning tree
+    _connect_rooms_mst(dungeon.tiles, rooms, rng, room_walls)
+
+    # Phase 3 — add dead-end branch rooms
+    dungeon.branch_rooms = _add_branch_rooms(dungeon.tiles, rooms, room_walls, rng, theme)
 
     dungeon.rooms = rooms
     dungeon.party_x, dungeon.party_y = rooms[0].center
+    dungeon.theme = theme
     return dungeon
+
+
+def _room_within_corridor_range(
+    room: Room, existing: List[Room], max_dist: int
+) -> bool:
+    cx, cy = room.center
+    return any(
+        max(abs(cx - r.center[0]), abs(cy - r.center[1])) <= max_dist
+        for r in existing
+    )
+
+
+def _connect_rooms_mst(
+    tiles: List[List[int]],
+    rooms: List[Room],
+    rng: random.Random,
+    room_walls: Set[Tuple[int, int]],
+) -> None:
+    N = len(rooms)
+    if N < 2:
+        return
+
+    edges = sorted(
+        (max(abs(rooms[i].center[0] - rooms[j].center[0]),
+             abs(rooms[i].center[1] - rooms[j].center[1])), i, j)
+        for i in range(N)
+        for j in range(i + 1, N)
+    )
+
+    parent = list(range(N))
+
+    def find(x: int) -> int:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    for _dist, i, j in edges:
+        if find(i) != find(j):
+            parent[find(i)] = find(j)
+            _carve_corridor(tiles, rooms[i], rooms[j], rng, room_walls)
+
+
+def _add_branch_rooms(
+    tiles: List[List[int]],
+    rooms: List[Room],
+    room_walls: Set[Tuple[int, int]],
+    rng: random.Random,
+    theme: Theme,
+) -> List[Room]:
+    count = rng.randint(2, 4)
+    branches: List[Room] = []
+    all_rooms = list(rooms)
+    attempts = 0
+
+    while len(branches) < count and attempts < 40:
+        attempts += 1
+        parent = rng.choice(rooms)
+        side = rng.choice(("top", "bottom", "left", "right"))
+        bw = rng.randint(3, 5)
+        bh = rng.randint(3, 4)
+
+        if side == "top":
+            if parent.w < 4:
+                continue
+            wx = rng.randint(parent.x + 1, parent.x + parent.w - 2)
+            branch = Room(wx - bw // 2, parent.y - 1 - bh, bw, bh)
+            conn = (wx, branch.y + bh - 1, wx, parent.y)
+        elif side == "bottom":
+            if parent.w < 4:
+                continue
+            wx = rng.randint(parent.x + 1, parent.x + parent.w - 2)
+            branch = Room(wx - bw // 2, parent.y + parent.h + 1, bw, bh)
+            conn = (wx, parent.y + parent.h - 1, wx, branch.y)
+        elif side == "left":
+            if parent.h < 4:
+                continue
+            wy = rng.randint(parent.y + 1, parent.y + parent.h - 2)
+            branch = Room(parent.x - 1 - bw, wy - bh // 2, bw, bh)
+            conn = (branch.x + bw - 1, parent.x, wy, wy)
+        else:  # right
+            if parent.h < 4:
+                continue
+            wy = rng.randint(parent.y + 1, parent.y + parent.h - 2)
+            branch = Room(parent.x + parent.w + 1, wy - bh // 2, bw, bh)
+            conn = (parent.x + parent.w - 1, branch.x, wy, wy)
+
+        if (branch.x < 2 or branch.y < 2 or
+                branch.x + branch.w > MAP_WIDTH  - 3 or
+                branch.y + branch.h > MAP_HEIGHT - 3):
+            continue
+        if any(branch.overlaps(r, margin=1) for r in all_rooms):
+            continue
+
+        _carve_room(tiles, branch, room_walls)
+
+        # conn encodes (x1, x2, y, y) for horizontal or (x, x, y1, y2) for vertical
+        x1, x2, y1, y2 = conn
+        if x1 == x2:
+            _carve_v_tunnel(tiles, y1, y2, x1, room_walls)
+        else:
+            _carve_h_tunnel(tiles, x1, x2, y1, room_walls)
+
+        all_rooms.append(branch)
+        branches.append(branch)
+
+    return branches
 
 
 def _carve_room(tiles: List[List[int]], room: Room,

@@ -9,7 +9,6 @@ class GlyphboundApp(App):
     CSS = """
     Screen {
         background: black;
-        layers: base;
     }
 
     #title-bar {
@@ -17,7 +16,7 @@ class GlyphboundApp(App):
         height: 1;
         background: black;
         content-align: center middle;
-        color: ansi_bright_yellow;
+        color: white;
         text-style: bold;
     }
 
@@ -43,7 +42,10 @@ class GlyphboundApp(App):
         yield Static("Glyphbound", id="title-bar")
         yield self.map_view
 
-    # --- movement actions ---
+    def on_mount(self) -> None:
+        title = self.query_one("#title-bar", Static)
+        title.update(f"Glyphbound — {self.dungeon.theme.name}")
+        title.styles.color = self.dungeon.theme.title_color
 
     def action_move_up(self)    -> None: self._move(0, -1)
     def action_move_down(self)  -> None: self._move(0,  1)
