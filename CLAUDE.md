@@ -25,11 +25,13 @@ glyphbound/
 ├── .venv/                # Virtual environment (not committed)
 └── glyphbound/           # Game package
     ├── __init__.py
-    └── app.py            # GlyphboundApp (Textual App subclass)
+    ├── app.py            # GlyphboundApp (Textual App subclass), floor stack, stair transitions
+    ├── dungeon.py        # Dungeon dataclass, procedural generation, tile constants (200×200 map)
+    ├── map_view.py       # Textual widget that renders the dungeon viewport
+    └── themes.py         # Theme dataclass and all built-in themes
 ```
 
 As the project grows, new modules go inside `glyphbound/`:
-- `map.py` — dungeon/map generation
 - `entities.py` — player, monsters, NPCs
 - `combat.py` — combat resolution
 - `items.py` — inventory and items
@@ -63,11 +65,11 @@ pip freeze > requirements.txt   # keep this in sync
 # Glyphbound Future Feature Ideas
 
 ## Dungeon Generation
-- [ ] Procedurally generated dungeon floors with rooms and corridors
-- [ ] Multiple dungeon themes: library, catacombs, ritual halls, corrupted syntax, deep archive
+- [x] Procedurally generated dungeon floors with rooms and corridors
+- [x] Multiple dungeon themes: library, catacombs, ritual halls, corrupted syntax, deep archive
 - [ ] Room types: combat, treasure, Glyph, trap, lore, rest, boss
-- [ ] Floor progression with stairs, milestones, and escalating danger
-- [ ] Seeded dungeon generation for replay/debugging
+- [x] Floor progression with stairs, milestones, and escalating danger
+- [x] Seeded dungeon generation for replay/debugging
 - [ ] Secret rooms and hidden passages
 - [ ] Dungeon “grammar” rules where rooms, corridors, and Glyphs interact thematically
 

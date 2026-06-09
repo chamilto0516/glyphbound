@@ -7,14 +7,16 @@ from typing import TYPE_CHECKING, List, Optional, Set, Tuple
 if TYPE_CHECKING:
     from .themes import Theme
 
-MAP_WIDTH  = 500
-MAP_HEIGHT = 500
+MAP_WIDTH  = 200
+MAP_HEIGHT = 200
 
 VOID        = 0
 FLOOR       = 1
 WALL        = 2
 DOOR_CLOSED = 3
 DOOR_OPEN   = 4
+STAIR_DOWN  = 5
+STAIR_UP    = 6
 
 
 @dataclass
@@ -47,6 +49,9 @@ class Dungeon:
     party_x: int = 0
     party_y: int = 0
     theme: Optional[Theme] = field(default=None)
+    floor: int = 1
+    stair_down_pos: Optional[Tuple[int, int]] = None
+    stair_up_pos: Optional[Tuple[int, int]] = None
 
     def tile_at(self, x: int, y: int) -> int:
         if 0 <= x < self.width and 0 <= y < self.height:
@@ -59,11 +64,11 @@ class Dungeon:
         if tile == DOOR_CLOSED:
             self.tiles[ny][nx] = DOOR_OPEN
             self.party_x, self.party_y = nx, ny
-        elif tile in (FLOOR, DOOR_OPEN):
+        elif tile in (FLOOR, DOOR_OPEN, STAIR_DOWN, STAIR_UP):
             self.party_x, self.party_y = nx, ny
 
 
-def generate_dungeon(seed: int = None, theme: Theme = None) -> Dungeon:
+def generate_dungeon(seed: int = None, theme: Theme = None, floor: int = 1, place_up_stair: bool = False) -> Dungeon:
     rng = random.Random(seed)
 
     if theme is None:
@@ -102,6 +107,24 @@ def generate_dungeon(seed: int = None, theme: Theme = None) -> Dungeon:
     dungeon.rooms = rooms
     dungeon.party_x, dungeon.party_y = rooms[0].center
     dungeon.theme = theme
+    dungeon.floor = floor
+
+    # Place stairs — down in the room farthest from the start, up in the start room
+    start_cx, start_cy = rooms[0].center
+    farthest = max(
+        rooms[1:],
+        key=lambda r: abs(r.center[0] - start_cx) + abs(r.center[1] - start_cy),
+        default=rooms[0],
+    )
+    dx, dy = farthest.center
+    dungeon.tiles[dy][dx] = STAIR_DOWN
+    dungeon.stair_down_pos = (dx, dy)
+
+    if place_up_stair:
+        ux, uy = start_cx, start_cy
+        dungeon.tiles[uy][ux] = STAIR_UP
+        dungeon.stair_up_pos = (ux, uy)
+
     return dungeon
 
 

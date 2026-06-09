@@ -33,9 +33,18 @@ python main.py
 
 Press `q` or `Escape` to quit.
 
+## Controls
+
+| Key | Action |
+|-----|--------|
+| `w` / `a` / `s` / `d` | Move up / left / down / right |
+| `q` / `Escape` | Quit |
+
+Walk onto `>` to descend to the next floor. Walk onto `<` to return to the floor above.
+
 ## Project Status
 
-Early development — currently a hello-world skeleton. See [CLAUDE.md](CLAUDE.md) for the full feature roadmap.
+Early development. The game generates a multi-room dungeon, lets you explore it, and supports descending and ascending between floors. Each floor has a randomly chosen theme. See [CLAUDE.md](CLAUDE.md) for the full feature roadmap.
 
 ## License
 

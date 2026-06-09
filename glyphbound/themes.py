@@ -3,7 +3,7 @@ from typing import Dict
 
 from rich.style import Style
 
-from .dungeon import VOID, FLOOR, WALL, DOOR_CLOSED, DOOR_OPEN
+from .dungeon import VOID, FLOOR, WALL, DOOR_CLOSED, DOOR_OPEN, STAIR_DOWN, STAIR_UP
 
 PARTY_GLYPH = "@"
 
@@ -28,13 +28,15 @@ class Theme:
 
 THEME_LIBRARY = Theme(
     name="Library",
-    glyphs={VOID: " ", FLOOR: ".", WALL: "#", DOOR_CLOSED: "+", DOOR_OPEN: "/"},
+    glyphs={VOID: " ", FLOOR: ".", WALL: "#", DOOR_CLOSED: "+", DOOR_OPEN: "/", STAIR_DOWN: ">", STAIR_UP: "<"},
     tile_styles={
         VOID:        Style(color="black",        bgcolor=_BG),
         FLOOR:       Style(color="wheat4",        bgcolor=_BG),
         WALL:        Style(color="navajo_white1", bgcolor=_BG, bold=True),
         DOOR_CLOSED: Style(color="sandy_brown",   bgcolor=_BG, bold=True),
         DOOR_OPEN:   Style(color="tan",           bgcolor=_BG),
+        STAIR_DOWN:  Style(color="bright_yellow", bgcolor=_BG, bold=True),
+        STAIR_UP:    Style(color="bright_yellow", bgcolor=_BG, bold=True),
     },
     party_style=Style(color="bright_yellow", bgcolor=_BG, bold=True),
     title_color="ansi_bright_yellow",
@@ -46,13 +48,15 @@ THEME_LIBRARY = Theme(
 
 THEME_LIVING = Theme(
     name="Living Dungeon",
-    glyphs={VOID: " ", FLOOR: ",", WALL: "O", DOOR_CLOSED: "V", DOOR_OPEN: "v"},
+    glyphs={VOID: " ", FLOOR: ",", WALL: "O", DOOR_CLOSED: "V", DOOR_OPEN: "v", STAIR_DOWN: ">", STAIR_UP: "<"},
     tile_styles={
         VOID:        Style(color="black",          bgcolor=_BG),
         FLOOR:       Style(color="dark_sea_green4", bgcolor=_BG),
         WALL:        Style(color="pale_green3",     bgcolor=_BG, bold=True),
         DOOR_CLOSED: Style(color="sea_green3",      bgcolor=_BG, bold=True),
         DOOR_OPEN:   Style(color="chartreuse4",     bgcolor=_BG),
+        STAIR_DOWN:  Style(color="bright_green",    bgcolor=_BG, bold=True),
+        STAIR_UP:    Style(color="bright_green",    bgcolor=_BG, bold=True),
     },
     party_style=Style(color="bright_green", bgcolor=_BG, bold=True),
     title_color="ansi_bright_green",
@@ -64,13 +68,15 @@ THEME_LIVING = Theme(
 
 THEME_JAIL = Theme(
     name="Prison",
-    glyphs={VOID: " ", FLOOR: ".", WALL: "|", DOOR_CLOSED: "=", DOOR_OPEN: "-"},
+    glyphs={VOID: " ", FLOOR: ".", WALL: "|", DOOR_CLOSED: "=", DOOR_OPEN: "-", STAIR_DOWN: ">", STAIR_UP: "<"},
     tile_styles={
-        VOID:        Style(color="black",   bgcolor=_BG),
-        FLOOR:       Style(color="grey46",  bgcolor=_BG),
-        WALL:        Style(color="grey66",  bgcolor=_BG, bold=True),
-        DOOR_CLOSED: Style(color="grey70",  bgcolor=_BG, bold=True),
-        DOOR_OPEN:   Style(color="grey37",  bgcolor=_BG),
+        VOID:        Style(color="black",        bgcolor=_BG),
+        FLOOR:       Style(color="grey46",        bgcolor=_BG),
+        WALL:        Style(color="grey66",        bgcolor=_BG, bold=True),
+        DOOR_CLOSED: Style(color="grey70",        bgcolor=_BG, bold=True),
+        DOOR_OPEN:   Style(color="grey37",        bgcolor=_BG),
+        STAIR_DOWN:  Style(color="bright_white",  bgcolor=_BG, bold=True),
+        STAIR_UP:    Style(color="bright_white",  bgcolor=_BG, bold=True),
     },
     party_style=Style(color="bright_white", bgcolor=_BG, bold=True),
     title_color="ansi_bright_white",
@@ -82,13 +88,15 @@ THEME_JAIL = Theme(
 
 THEME_CATACOMBS = Theme(
     name="Catacombs",
-    glyphs={VOID: " ", FLOOR: ".", WALL: "*", DOOR_CLOSED: "+", DOOR_OPEN: "/"},
+    glyphs={VOID: " ", FLOOR: ".", WALL: "*", DOOR_CLOSED: "+", DOOR_OPEN: "/", STAIR_DOWN: ">", STAIR_UP: "<"},
     tile_styles={
         VOID:        Style(color="black",       bgcolor=_BG),
         FLOOR:       Style(color="rosy_brown",  bgcolor=_BG),
         WALL:        Style(color="indian_red1", bgcolor=_BG, bold=True),
         DOOR_CLOSED: Style(color="dark_red",    bgcolor=_BG, bold=True),
         DOOR_OPEN:   Style(color="rosy_brown",  bgcolor=_BG),
+        STAIR_DOWN:  Style(color="bright_red",  bgcolor=_BG, bold=True),
+        STAIR_UP:    Style(color="bright_red",  bgcolor=_BG, bold=True),
     },
     party_style=Style(color="bright_red", bgcolor=_BG, bold=True),
     title_color="ansi_bright_red",
@@ -100,13 +108,15 @@ THEME_CATACOMBS = Theme(
 
 THEME_RITUAL = Theme(
     name="Ritual Sanctum",
-    glyphs={VOID: " ", FLOOR: "*", WALL: "#", DOOR_CLOSED: "X", DOOR_OPEN: "x"},
+    glyphs={VOID: " ", FLOOR: "*", WALL: "#", DOOR_CLOSED: "X", DOOR_OPEN: "x", STAIR_DOWN: ">", STAIR_UP: "<"},
     tile_styles={
-        VOID:        Style(color="black",          bgcolor=_BG),
-        FLOOR:       Style(color="medium_purple3", bgcolor=_BG),
-        WALL:        Style(color="plum4",          bgcolor=_BG, bold=True),
-        DOOR_CLOSED: Style(color="orchid1",        bgcolor=_BG, bold=True),
-        DOOR_OPEN:   Style(color="magenta3",       bgcolor=_BG),
+        VOID:        Style(color="black",           bgcolor=_BG),
+        FLOOR:       Style(color="medium_purple3",  bgcolor=_BG),
+        WALL:        Style(color="plum4",           bgcolor=_BG, bold=True),
+        DOOR_CLOSED: Style(color="orchid1",         bgcolor=_BG, bold=True),
+        DOOR_OPEN:   Style(color="magenta3",        bgcolor=_BG),
+        STAIR_DOWN:  Style(color="bright_magenta",  bgcolor=_BG, bold=True),
+        STAIR_UP:    Style(color="bright_magenta",  bgcolor=_BG, bold=True),
     },
     party_style=Style(color="bright_magenta", bgcolor=_BG, bold=True),
     title_color="ansi_bright_magenta",
@@ -118,13 +128,15 @@ THEME_RITUAL = Theme(
 
 THEME_CAVERNS = Theme(
     name="Natural Caverns",
-    glyphs={VOID: " ", FLOOR: ".", WALL: "%", DOOR_CLOSED: "+", DOOR_OPEN: "/"},
+    glyphs={VOID: " ", FLOOR: ".", WALL: "%", DOOR_CLOSED: "+", DOOR_OPEN: "/", STAIR_DOWN: ">", STAIR_UP: "<"},
     tile_styles={
         VOID:        Style(color="black",           bgcolor=_BG),
         FLOOR:       Style(color="grey37",          bgcolor=_BG),
         WALL:        Style(color="grey58",          bgcolor=_BG, bold=True),
         DOOR_CLOSED: Style(color="steel_blue",      bgcolor=_BG, bold=True),
         DOOR_OPEN:   Style(color="cornflower_blue", bgcolor=_BG),
+        STAIR_DOWN:  Style(color="bright_cyan",     bgcolor=_BG, bold=True),
+        STAIR_UP:    Style(color="bright_cyan",     bgcolor=_BG, bold=True),
     },
     party_style=Style(color="bright_cyan", bgcolor=_BG, bold=True),
     title_color="ansi_cyan",
