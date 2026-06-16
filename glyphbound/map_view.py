@@ -31,7 +31,12 @@ class MapView(Widget):
             if mx == dungeon.party_x and my == dungeon.party_y:
                 segments.append(Segment(PARTY_GLYPH, theme.party_style))
             else:
-                tile = dungeon.tile_at(mx, my)
-                segments.append(Segment(theme.glyphs[tile], theme.tile_styles[tile]))
+                floor_items = dungeon.items_at(mx, my)
+                if floor_items:
+                    from rich.style import Style as RichStyle
+                    segments.append(Segment(floor_items[-1].glyph, RichStyle(color="bright_cyan", bold=True)))
+                else:
+                    tile = dungeon.tile_at(mx, my)
+                    segments.append(Segment(theme.glyphs[tile], theme.tile_styles[tile]))
 
         return Strip(segments, width)

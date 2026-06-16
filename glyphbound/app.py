@@ -6,6 +6,7 @@ from textual.widgets import Static, Input
 from textual.reactive import reactive
 
 from .dungeon import STAIR_DOWN, STAIR_UP, generate_dungeon
+from .items import EquipSlot, Item, ItemKind
 from .map_view import MapView
 from .player import CharacterClass, Player
 
@@ -142,18 +143,22 @@ class StatsPanel(Static):
             return ""
         lines = [
             f"[bold yellow]{p.name}[/bold yellow] the {p.char_class.value}",
-            f"Lv {p.level}   Floor {self.floor_num}",
-            f"HP: [green]{p.hp:>3}[/green] / {p.max_hp:<3}",
-            f"ATK: {p.attack:<3}  DEF: {p.defense:<3}",
-            f"XP:  {p.xp}",
+            f"Lv {p.level}   Floor {self.floor_num}   [yellow]{p.gold}gp[/yellow]",
+            f"HP: [green]{p.hp:>3}[/green]/{p.max_hp:<3}  ATK:{p.attack:<3} DEF:{p.defense}",
+            f"XP: {p.xp}",
         ]
         if p.has_mp:
-            lines.append(f"MP: [cyan]{p.mp:>3}[/cyan] / {p.max_mp:<3}")
+            lines.append(f"MP: [cyan]{p.mp:>3}[/cyan]/{p.max_mp}")
         else:
             lines.append("")
-        lines.append("[dim]──────────────────────[/dim]")
-        lines.append("[bold]Inventory[/bold]")
-        lines.append(" (empty)")
+        lines.append("[dim]────────────────────────[/dim]")
+        # equipped slots
+        weapon = p.equipped.get(EquipSlot.WEAPON.value)
+        helmet = p.equipped.get(EquipSlot.HELMET.value)
+        armor  = p.equipped.get(EquipSlot.ARMOR.value)
+        shield = p.equipped.get(EquipSlot.SHIELD.value)
+        lines.append(f"[dim]W:[/dim]{weapon.name if weapon else '—':<14} [dim]H:[/dim]{helmet.name if helmet else '—'}")
+        lines.append(f"[dim]A:[/dim]{armor.name  if armor  else '—':<14} [dim]S:[/dim]{shield.name if shield else '—'}")
         return "\n".join(lines)
 
 
@@ -173,6 +178,130 @@ class MessageLog(Static):
     def clear(self) -> None:
         self._messages = []
         self.update("")
+
+
+# ── Inventory screen ──────────────────────────────────────────────────────────
+
+class InventoryScreen(Screen):
+    CSS = """
+    InventoryScreen {
+        background: black;
+        align: center middle;
+    }
+
+    #inv-box {
+        width: 56;
+        height: auto;
+        border: double ansi_bright_yellow;
+        padding: 1 2;
+        background: black;
+    }
+
+    #inv-title {
+        text-align: center;
+        text-style: bold;
+        color: ansi_bright_yellow;
+        margin-bottom: 1;
+    }
+
+    #inv-hint {
+        color: #888888;
+        margin-bottom: 1;
+    }
+
+    .inv-line {
+        color: white;
+    }
+
+    .inv-selected {
+        color: ansi_bright_yellow;
+        text-style: bold;
+    }
+
+    #inv-actions {
+        color: #aaaaaa;
+        margin-top: 1;
+    }
+    """
+
+    def __init__(self, player: Player) -> None:
+        super().__init__()
+        self.player = player
+        self._selected: int | None = None
+
+    def _all_items(self) -> list[tuple[Item, bool, str]]:
+        """Returns list of (item, is_equipped, slot_label)."""
+        result = []
+        for item in self.player.inventory:
+            result.append((item, False, ""))
+        for slot, item in self.player.equipped.items():
+            result.append((item, True, slot))
+        return result
+
+    def compose(self) -> ComposeResult:
+        with Static(id="inv-box"):
+            yield Static("Inventory", id="inv-title")
+            yield Static("Press a number to select, then (E)quip/(U)se/(D)rop. Esc to close.", id="inv-hint")
+            yield Static(id="inv-list")
+            yield Static("", id="inv-actions")
+
+    def on_mount(self) -> None:
+        self._refresh_list()
+
+    def _refresh_list(self) -> None:
+        items = self._all_items()
+        inv_list = self.query_one("#inv-list", Static)
+        actions  = self.query_one("#inv-actions", Static)
+        if not items:
+            inv_list.update("[dim](empty)[/dim]")
+            actions.update("")
+            return
+        lines = []
+        for i, (item, equipped, slot) in enumerate(items):
+            tag = f"[dim][{slot}][/dim] " if equipped else ""
+            marker = "[bold ansi_bright_yellow]>[/bold ansi_bright_yellow] " if i == self._selected else "  "
+            lines.append(f"{marker}[bold]{i+1}.[/bold] {tag}{item}")
+        inv_list.update("\n".join(lines))
+        if self._selected is not None and 0 <= self._selected < len(items):
+            item, equipped, _ = items[self._selected]
+            opts = []
+            if item.equip_slot and not equipped:
+                opts.append("(E)quip")
+            if equipped:
+                opts.append("(U)nequip")
+            if item.kind == ItemKind.POTION:
+                opts.append("(U)se")
+            opts.append("(D)rop")
+            actions.update("  ".join(opts))
+        else:
+            actions.update("")
+
+    def on_key(self, event) -> None:
+        items = self._all_items()
+        if event.key == "escape":
+            self.dismiss(None)
+            return
+        if event.character and event.character.isdigit():
+            idx = int(event.character) - 1
+            if 0 <= idx < len(items):
+                self._selected = idx
+                self._refresh_list()
+            return
+        if self._selected is None or not (0 <= self._selected < len(items)):
+            return
+        item, equipped, slot = items[self._selected]
+        msg = None
+        if event.key == "e" and item.equip_slot and not equipped:
+            msg, _ = self.player.equip(item)
+        elif event.key == "u" and equipped:
+            msg = self.player.unequip(EquipSlot(slot))
+        elif event.key == "u" and item.kind == ItemKind.POTION:
+            msg = self.player.use_potion(item)
+        elif event.key == "d":
+            msg, _ = self.player.drop(item)
+            self._selected = None
+        if msg:
+            self.dismiss(msg)
 
 
 # ── Main app ───────────────────────────────────────────────────────────────────
@@ -230,6 +359,8 @@ class GlyphboundApp(App):
         ("s", "move_down",  "Move down"),
         ("a", "move_left",  "Move left"),
         ("d", "move_right", "Move right"),
+        ("g", "get_item",   "Get item"),
+        ("i", "inventory",  "Inventory"),
         ("q", "quit",       "Quit"),
         ("escape", "quit",  "Quit"),
     ]
@@ -282,13 +413,44 @@ class GlyphboundApp(App):
             self.player.on_move()
             self.stats_panel.player = self.player
             self.stats_panel.refresh()
-        tile = self.dungeon.tile_at(self.dungeon.party_x, self.dungeon.party_y)
+        x, y = self.dungeon.party_x, self.dungeon.party_y
+        tile = self.dungeon.tile_at(x, y)
         if tile == STAIR_DOWN:
             self._descend()
         elif tile == STAIR_UP:
             self._ascend()
         else:
             self.map_view.refresh()
+            items = self.dungeon.items_at(x, y)
+            if items:
+                names = ", ".join(i.name for i in items)
+                self.message_log.add(f"You see here: {names}. (G to pick up)")
+
+    def action_get_item(self) -> None:
+        if not self.player:
+            return
+        x, y = self.dungeon.party_x, self.dungeon.party_y
+        items = list(self.dungeon.items_at(x, y))
+        if not items:
+            self.message_log.add("Nothing to pick up here.")
+            return
+        for item in items:
+            msg = self.player.pick_up(item)
+            self.dungeon.remove_item(x, y, item)
+            self.message_log.add(msg)
+        self.stats_panel.refresh()
+        self.map_view.refresh()
+
+    def action_inventory(self) -> None:
+        if not self.player:
+            return
+        self.push_screen(InventoryScreen(self.player), callback=self._inv_closed)
+
+    def _inv_closed(self, msg: str | None) -> None:
+        if msg:
+            self.message_log.add(msg)
+        self.stats_panel.refresh()
+        self.map_view.refresh()
 
     def _descend(self) -> None:
         sx, sy = self.dungeon.stair_down_pos

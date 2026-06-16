@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import random
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, List, Optional, Set, Tuple
+from typing import TYPE_CHECKING, Dict, List, Optional, Set, Tuple
 
 if TYPE_CHECKING:
     from .themes import Theme
+    from .items import Item
 
 MAP_WIDTH  = 200
 MAP_HEIGHT = 200
@@ -52,11 +53,28 @@ class Dungeon:
     floor: int = 1
     stair_down_pos: Optional[Tuple[int, int]] = None
     stair_up_pos: Optional[Tuple[int, int]] = None
+    items: Dict[Tuple[int, int], List["Item"]] = field(default_factory=dict)
 
     def tile_at(self, x: int, y: int) -> int:
         if 0 <= x < self.width and 0 <= y < self.height:
             return self.tiles[y][x]
         return VOID
+
+    def place_item(self, x: int, y: int, item: "Item") -> None:
+        self.items.setdefault((x, y), []).append(item)
+
+    def items_at(self, x: int, y: int) -> List["Item"]:
+        return self.items.get((x, y), [])
+
+    def remove_item(self, x: int, y: int, item: "Item") -> None:
+        stack = self.items.get((x, y), [])
+        if item in stack:
+            stack.remove(item)
+            if not stack:
+                del self.items[(x, y)]
+
+    def drop_item(self, x: int, y: int, item: "Item") -> None:
+        self.place_item(x, y, item)
 
     def move_party(self, dx: int, dy: int) -> None:
         nx, ny = self.party_x + dx, self.party_y + dy
@@ -124,6 +142,11 @@ def generate_dungeon(seed: int = None, theme: Theme = None, floor: int = 1, plac
         ux, uy = start_cx, start_cy
         dungeon.tiles[uy][ux] = STAIR_UP
         dungeon.stair_up_pos = (ux, uy)
+
+    if floor == 1:
+        from .items import ITEM_CLUB, ITEM_LEATHER_CAP
+        dungeon.place_item(start_cx + 1, start_cy,     ITEM_CLUB)
+        dungeon.place_item(start_cx - 1, start_cy,     ITEM_LEATHER_CAP)
 
     return dungeon
 
