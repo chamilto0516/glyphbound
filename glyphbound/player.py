@@ -5,6 +5,7 @@ from enum import Enum
 from typing import Dict, List, Optional, Tuple
 
 from .items import EquipSlot, Item, ItemKind
+from .spells import Spell, SpellEffect, WIZARD_SPELLS, CLERIC_SPELLS
 
 
 class CharacterClass(Enum):
@@ -40,6 +41,8 @@ class Player:
 
     inventory: List[Item]             = field(default_factory=list)
     equipped:  Dict[str, Item]        = field(default_factory=dict)  # slot name → Item
+    spells:    List[Spell]            = field(default_factory=list)
+    temp_defense_bonus: int           = 0   # cleared after each combat
 
     def __post_init__(self) -> None:
         stats = _CLASS_STATS[self.char_class]
@@ -49,6 +52,10 @@ class Player:
         self._base_defense = stats["defense"]
         self.max_mp        = stats["mp"]
         self.mp            = stats["mp"]
+        if self.char_class == CharacterClass.WIZARD:
+            self.spells = list(WIZARD_SPELLS)
+        elif self.char_class == CharacterClass.CLERIC:
+            self.spells = list(CLERIC_SPELLS)
 
     # ── Computed stats ─────────────────────────────────────────────────────────
 
@@ -60,7 +67,7 @@ class Player:
     @property
     def defense(self) -> int:
         bonus = sum(i.defense_bonus for i in self.equipped.values())
-        return self._base_defense + bonus
+        return self._base_defense + bonus + self.temp_defense_bonus
 
     # ── Inventory actions ──────────────────────────────────────────────────────
 
@@ -119,6 +126,37 @@ class Player:
             self.mp += restored
             msgs.append(f"+{restored} MP")
         return f"Drank {item.name}. " + ("  ".join(msgs) if msgs else "No effect.")
+
+    # ── Spells ─────────────────────────────────────────────────────────────────
+
+    def cast_spell(self, spell: Spell) -> Tuple[str, int]:
+        """
+        Attempt to cast a spell. Returns (message, damage_dealt).
+        damage_dealt is >0 only for DAMAGE spells — caller applies it to monster.
+        DEF buff is applied in-place here.
+        """
+        import random
+        if spell not in self.spells:
+            return "You don't know that spell.", 0
+        if self.mp < spell.mp_cost:
+            return f"Not enough MP to cast {spell.name}. (need {spell.mp_cost})", 0
+        self.mp -= spell.mp_cost
+        if spell.effect == SpellEffect.DAMAGE:
+            dmg = sum(random.randint(1, spell.damage_sides) for _ in range(spell.damage_count))
+            return f"You cast {spell.name} for {dmg} damage!", dmg
+        if spell.effect == SpellEffect.BUFF_DEF:
+            bonus = sum(random.randint(1, spell.def_sides) for _ in range(spell.def_count))
+            self.temp_defense_bonus += bonus
+            return f"Magic Armor conjured! +{bonus} DEF for next combat.", 0
+        if spell.effect == SpellEffect.HEAL:
+            healed = sum(random.randint(1, spell.heal_sides) for _ in range(spell.heal_count))
+            healed = min(healed, self.max_hp - self.hp)
+            self.hp += healed
+            return f"You cast {spell.name}. +{healed} HP restored. (HP: {self.hp}/{self.max_hp})", 0
+        if spell.effect == SpellEffect.TURN_UNDEAD:
+            # damage value returned as -1 signals the app to run turn-undead logic
+            return f"You invoke {spell.name}!", -1
+        return f"Cast {spell.name}.", 0
 
     # ── Per-move tick ──────────────────────────────────────────────────────────
 

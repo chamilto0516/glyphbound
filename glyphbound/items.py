@@ -29,6 +29,8 @@ class Item:
     mp_bonus: int       = 0   # potions: restored on use
     gold_value: int     = 0
     equip_slot: EquipSlot | None = field(default=None)
+    damage_sides: int   = 0   # 0 = static damage equal to damage_count
+    damage_count: int   = 1   # number of dice, or static value when sides=0
 
     def __str__(self) -> str:
         parts = [self.name]
@@ -50,18 +52,27 @@ class Item:
 ITEM_CLUB = Item(
     name="Club", kind=ItemKind.WEAPON, glyph="/",
     attack_bonus=1, gold_value=2, equip_slot=EquipSlot.WEAPON,
+    damage_sides=0, damage_count=1,   # static 1 damage
 )
 ITEM_DAGGER = Item(
     name="Dagger", kind=ItemKind.WEAPON, glyph="/",
     attack_bonus=2, gold_value=5, equip_slot=EquipSlot.WEAPON,
+    damage_sides=4, damage_count=1,   # 1d4
 )
 ITEM_SHORT_SWORD = Item(
     name="Short Sword", kind=ItemKind.WEAPON, glyph="/",
     attack_bonus=3, gold_value=15, equip_slot=EquipSlot.WEAPON,
+    damage_sides=6, damage_count=1,   # 1d6
+)
+ITEM_BROAD_SWORD = Item(
+    name="Broad Sword", kind=ItemKind.WEAPON, glyph="/",
+    attack_bonus=4, gold_value=30, equip_slot=EquipSlot.WEAPON,
+    damage_sides=8, damage_count=1,   # 1d8
 )
 ITEM_STAFF = Item(
     name="Staff", kind=ItemKind.WEAPON, glyph="/",
     attack_bonus=2, gold_value=8, equip_slot=EquipSlot.WEAPON,
+    damage_sides=4, damage_count=1,   # 1d4
 )
 
 ITEM_LEATHER_CAP = Item(
@@ -84,6 +95,15 @@ ITEM_HEALTH_POTION = Item(
 ITEM_MANA_POTION = Item(
     name="Mana Potion", kind=ItemKind.POTION, glyph="!",
     mp_bonus=10, gold_value=20,
+)
+# Full-restore potions (green / purple)
+ITEM_ELIXIR_VITALITY = Item(
+    name="Elixir of Vitality", kind=ItemKind.POTION, glyph="!",
+    hp_bonus=999, gold_value=80,   # use_potion caps at max_hp
+)
+ITEM_ELIXIR_CLARITY = Item(
+    name="Elixir of Clarity", kind=ItemKind.POTION, glyph="!",
+    mp_bonus=999, gold_value=80,   # use_potion caps at max_mp
 )
 
 ITEM_GEM = Item(
