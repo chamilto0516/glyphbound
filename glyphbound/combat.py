@@ -8,6 +8,8 @@ from .monsters import Monster
 from .player import Player
 from .spells import Spell, SpellEffect
 
+TURN_UNDEAD_WEAK_THRESHOLD = 10  # max_hp at or below this → destroyed outright
+
 
 def roll_damage(weapon: Item | None) -> int:
     if weapon is None:
@@ -32,6 +34,53 @@ def _attacker_hits(attack_roll: int, defense: int) -> bool:
     return attack_roll > defense
 
 
+def execute_player_attack(player: Player, monster: Monster) -> List[str]:
+    """Execute one player weapon attack round. Mutates monster.hp. Returns log lines."""
+    from .player import CharacterClass
+    log: List[str] = []
+    player_weapon = player.equipped.get(EquipSlot.WEAPON.value)
+    spell = _best_damage_spell(player) if player.char_class == CharacterClass.WIZARD else None
+    if spell:
+        msg, dmg = player.cast_spell(spell)
+        monster.hp = max(0, monster.hp - dmg)
+        log.append(f"  {msg}  {monster.name} HP: {monster.hp}/{monster.max_hp}")
+    else:
+        p_roll = random.randint(1, 6) + player.attack
+        if _attacker_hits(p_roll, monster.defense):
+            dmg = roll_damage(player_weapon)
+            monster.hp = max(0, monster.hp - dmg)
+            wpn_name = player_weapon.name if player_weapon else "fists"
+            log.append(f"  Your {wpn_name} hits for {dmg}! {monster.name} HP: {monster.hp}/{monster.max_hp}")
+        else:
+            log.append(f"  Your attack misses the {monster.name}.")
+    return log
+
+
+def execute_monster_attack(player: Player, monster: Monster) -> List[str]:
+    """Execute one monster attack round. Mutates player.hp. Returns log lines."""
+    log: List[str] = []
+    m_roll = random.randint(1, 6) + monster.attack
+    if _attacker_hits(m_roll, player.defense):
+        dmg = roll_damage(monster.weapon)
+        player.hp = max(0, player.hp - dmg)
+        wpn_name = monster.weapon.name if monster.weapon else "claws"
+        log.append(f"  {monster.name} hits you with {wpn_name} for {dmg}! Your HP: {player.hp}/{player.max_hp}")
+    else:
+        log.append(f"  {monster.name} misses you.")
+    return log
+
+
+def execute_flee_attempt(player: Player, monster: Monster) -> Tuple[List[str], bool]:
+    """50% flee chance. On failure, monster gets a free attack. Returns (log, succeeded)."""
+    log: List[str] = []
+    if random.random() < 0.5:
+        log.append(f"You flee from the {monster.name}!")
+        return log, True
+    log.append(f"You try to flee but {monster.name} blocks your way!")
+    log.extend(execute_monster_attack(player, monster))
+    return log, False
+
+
 def resolve_combat(player: Player, monster: Monster) -> Tuple[List[str], bool]:
     """
     Run combat to completion. Player always strikes first each round.
@@ -40,42 +89,14 @@ def resolve_combat(player: Player, monster: Monster) -> Tuple[List[str], bool]:
     Returns (log_lines, player_survived).
     xp and hp changes are applied directly to player and monster.
     """
-    from .player import CharacterClass
     log: List[str] = []
-    player_weapon = player.equipped.get(EquipSlot.WEAPON.value)
-    is_wizard = player.char_class == CharacterClass.WIZARD
-
     log.append(f"You attack the {monster.name}!")
 
     while player.hp > 0 and monster.hp > 0:
-        # ── Player attacks ────────────────────────────────────────────────────
-        spell = _best_damage_spell(player) if is_wizard else None
-        if spell:
-            msg, dmg = player.cast_spell(spell)
-            monster.hp = max(0, monster.hp - dmg)
-            log.append(f"  {msg}  {monster.name} HP: {monster.hp}/{monster.max_hp}")
-        else:
-            p_roll = random.randint(1, 6) + player.attack
-            if _attacker_hits(p_roll, monster.defense):
-                dmg = roll_damage(player_weapon)
-                monster.hp = max(0, monster.hp - dmg)
-                wpn_name = player_weapon.name if player_weapon else "fists"
-                log.append(f"  Your {wpn_name} hits for {dmg}! {monster.name} HP: {monster.hp}/{monster.max_hp}")
-            else:
-                log.append(f"  Your attack misses the {monster.name}.")
-
+        log.extend(execute_player_attack(player, monster))
         if monster.hp == 0:
             break
-
-        # ── Monster attacks ───────────────────────────────────────────────────
-        m_roll = random.randint(1, 6) + monster.attack
-        if _attacker_hits(m_roll, player.defense):
-            dmg = roll_damage(monster.weapon)
-            player.hp = max(0, player.hp - dmg)
-            wpn_name = monster.weapon.name if monster.weapon else "claws"
-            log.append(f"  {monster.name} hits you with {wpn_name} for {dmg}! Your HP: {player.hp}/{player.max_hp}")
-        else:
-            log.append(f"  {monster.name} misses you.")
+        log.extend(execute_monster_attack(player, monster))
 
     player.temp_defense_bonus = 0  # Magic Armor expires after each combat
 
@@ -86,3 +107,45 @@ def resolve_combat(player: Player, monster: Monster) -> Tuple[List[str], bool]:
     else:
         log.append(f"You have been slain by the {monster.name}...")
         return log, False
+
+
+def apply_spell_to_monster(
+    player: Player,
+    spell: Spell,
+    monster: Monster,
+) -> Tuple[List[str], bool]:
+    """
+    Apply a single out-of-combat spell to a monster.
+    Returns (log_lines, monster_killed).
+    Mutates monster.hp and player.xp in-place.
+    Caller must call dungeon.remove_monster() when monster_killed is True.
+    """
+    log: List[str] = []
+
+    if spell.effect == SpellEffect.DAMAGE:
+        msg, dmg = player.cast_spell(spell)
+        log.append(msg)
+        if dmg:
+            monster.hp = max(0, monster.hp - dmg)
+            log.append(f"  {monster.name} takes {dmg} damage! HP: {monster.hp}/{monster.max_hp}")
+
+    elif spell.effect == SpellEffect.TURN_UNDEAD:
+        if not monster.is_undead:
+            log.append(f"Turn Undead has no effect on {monster.name}.")
+            return log, False
+        msg, _ = player.cast_spell(spell)
+        log.append(msg)
+        if monster.max_hp <= TURN_UNDEAD_WEAK_THRESHOLD:
+            monster.hp = 0
+            log.append(f"  {monster.name} crumbles to dust!")
+        else:
+            dmg = random.randint(monster.max_hp // 2, monster.max_hp - 1)
+            monster.hp = max(0, monster.hp - dmg)
+            log.append(f"  {monster.name} takes {dmg} damage! HP: {monster.hp}/{monster.max_hp}")
+
+    killed = monster.hp == 0
+    if killed:
+        player.xp += monster.xp_value
+        log.append(f"  {monster.name} is slain! +{monster.xp_value} XP")
+
+    return log, killed

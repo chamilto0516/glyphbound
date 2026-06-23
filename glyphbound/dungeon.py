@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import random
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Dict, List, Optional, Set, Tuple
@@ -8,6 +9,8 @@ if TYPE_CHECKING:
     from .themes import Theme
     from .items import Item
     from .monsters import Monster
+
+logger = logging.getLogger(__name__)
 
 MAP_WIDTH  = 200
 MAP_HEIGHT = 200
@@ -87,6 +90,14 @@ class Dungeon:
     def remove_monster(self, x: int, y: int) -> None:
         self.monsters.pop((x, y), None)
 
+    def nearest_monster(self):
+        """Return ((x, y), Monster) for the closest monster by Manhattan distance, or None."""
+        return min(
+            self.monsters.items(),
+            key=lambda kv: abs(kv[0][0] - self.party_x) + abs(kv[0][1] - self.party_y),
+            default=None,
+        )
+
     def move_party(self, dx: int, dy: int) -> bool:
         """Move party, return True if they moved, False if blocked."""
         nx, ny = self.party_x + dx, self.party_y + dy
@@ -114,6 +125,7 @@ def generate_dungeon(seed: int = None, theme: Theme = None, floor: int = 1, plac
     dungeon.tiles = [[VOID] * MAP_WIDTH for _ in range(MAP_HEIGHT)]
 
     target = rng.randint(theme.min_rooms, theme.max_rooms)
+    logger.info("Floor %d — theme=%s seed=%s target_rooms=%d", floor, theme.name, seed, target)
     rooms: List[Room] = []
     room_walls: Set[Tuple[int, int]] = set()
     attempts = 0
@@ -132,12 +144,17 @@ def generate_dungeon(seed: int = None, theme: Theme = None, floor: int = 1, plac
             continue
         _carve_room(dungeon.tiles, room, room_walls)
         rooms.append(room)
+        logger.debug("room #%d (%d,%d) %dx%d center=%s",
+                     len(rooms), room.x, room.y, room.w, room.h, room.center)
+
+    logger.info("Phase 1: %d rooms placed in %d attempts", len(rooms), attempts)
 
     # Phase 2 — connect all rooms via minimum spanning tree
     _connect_rooms_mst(dungeon.tiles, rooms, rng, room_walls)
 
     # Phase 3 — add dead-end branch rooms
     dungeon.branch_rooms = _add_branch_rooms(dungeon.tiles, rooms, room_walls, rng, theme)
+    logger.info("Phase 3: %d branch rooms", len(dungeon.branch_rooms))
 
     dungeon.rooms = rooms
     dungeon.party_x, dungeon.party_y = rooms[0].center
@@ -159,11 +176,16 @@ def generate_dungeon(seed: int = None, theme: Theme = None, floor: int = 1, plac
         ux, uy = start_cx, start_cy
         dungeon.tiles[uy][ux] = STAIR_UP
         dungeon.stair_up_pos = (ux, uy)
+    logger.info("Stairs down at %s; up at %s", dungeon.stair_down_pos, dungeon.stair_up_pos)
 
+    item_count = 0
     if floor == 1:
         from .items import ITEM_CLUB, ITEM_LEATHER_CAP
         dungeon.place_item(start_cx + 1, start_cy, ITEM_CLUB)
         dungeon.place_item(start_cx - 1, start_cy, ITEM_LEATHER_CAP)
+        logger.info("item %s (%s) at %s", ITEM_CLUB.name, ITEM_CLUB.kind.value, (start_cx + 1, start_cy))
+        logger.info("item %s (%s) at %s", ITEM_LEATHER_CAP.name, ITEM_LEATHER_CAP.kind.value, (start_cx - 1, start_cy))
+        item_count += 2
 
     # Scatter one Elixir of Vitality and one Elixir of Clarity in random rooms.
     from .items import ITEM_ELIXIR_VITALITY, ITEM_ELIXIR_CLARITY
@@ -171,6 +193,8 @@ def generate_dungeon(seed: int = None, theme: Theme = None, floor: int = 1, plac
     for room, elixir in zip(elixir_rooms, [ITEM_ELIXIR_VITALITY, ITEM_ELIXIR_CLARITY]):
         ex, ey = room.center
         dungeon.place_item(ex, ey, elixir)
+        logger.info("item %s (%s) at %s", elixir.name, elixir.kind.value, (ex, ey))
+        item_count += 1
 
     # Place one of each monster type in separate rooms, spread across the map.
     # Sort candidates by distance from start so goblin lands near start,
@@ -184,6 +208,7 @@ def generate_dungeon(seed: int = None, theme: Theme = None, floor: int = 1, plac
         key=lambda r: abs(r.center[0] - start_cx) + abs(r.center[1] - start_cy)
     )
     n = len(candidate_rooms)
+    monster_count = 0
     if n >= len(ALL_SPAWNERS):
         third = max(1, n // len(ALL_SPAWNERS))
         for i, spawner in enumerate(ALL_SPAWNERS):
@@ -192,13 +217,24 @@ def generate_dungeon(seed: int = None, theme: Theme = None, floor: int = 1, plac
             zone       = candidate_rooms[zone_start:zone_end]
             room       = rng.choice(zone)
             mx, my     = room.center
-            dungeon.place_monster(mx, my, spawner())
+            m = spawner()
+            dungeon.place_monster(mx, my, m)
+            logger.info("monster %s '%s' hp%d atk%d def%d xp%d at %s",
+                        m.name, m.glyph, m.hp, m.attack, m.defense, m.xp_value, (mx, my))
+            monster_count += 1
     else:
         # fewer rooms than monster types — place what we can in distinct rooms
         rng.shuffle(candidate_rooms)
         for i, spawner in enumerate(ALL_SPAWNERS[:n]):
             mx, my = candidate_rooms[i].center
-            dungeon.place_monster(mx, my, spawner())
+            m = spawner()
+            dungeon.place_monster(mx, my, m)
+            logger.info("monster %s '%s' hp%d atk%d def%d xp%d at %s",
+                        m.name, m.glyph, m.hp, m.attack, m.defense, m.xp_value, (mx, my))
+            monster_count += 1
+
+    logger.info("Floor %d complete: %d rooms, %d branches, %d items, %d monsters",
+                floor, len(rooms), len(dungeon.branch_rooms), item_count, monster_count)
 
     return dungeon
 
@@ -238,10 +274,11 @@ def _connect_rooms_mst(
             x = parent[x]
         return x
 
-    for _dist, i, j in edges:
+    for dist, i, j in edges:
         if find(i) != find(j):
             parent[find(i)] = find(j)
             _carve_corridor(tiles, rooms[i], rooms[j], rng, room_walls)
+            logger.debug("corridor room%d<->room%d dist=%d", i + 1, j + 1, dist)
 
 
 def _add_branch_rooms(
@@ -306,6 +343,7 @@ def _add_branch_rooms(
 
         all_rooms.append(branch)
         branches.append(branch)
+        logger.debug("branch side=%s (%d,%d) %dx%d", side, branch.x, branch.y, branch.w, branch.h)
 
     return branches
 

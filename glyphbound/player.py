@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import random
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Dict, List, Optional, Tuple
@@ -135,7 +136,6 @@ class Player:
         damage_dealt is >0 only for DAMAGE spells — caller applies it to monster.
         DEF buff is applied in-place here.
         """
-        import random
         if spell not in self.spells:
             return "You don't know that spell.", 0
         if self.mp < spell.mp_cost:
@@ -154,8 +154,7 @@ class Player:
             self.hp += healed
             return f"You cast {spell.name}. +{healed} HP restored. (HP: {self.hp}/{self.max_hp})", 0
         if spell.effect == SpellEffect.TURN_UNDEAD:
-            # damage value returned as -1 signals the app to run turn-undead logic
-            return f"You invoke {spell.name}!", -1
+            return f"You invoke {spell.name}!", 0
         return f"Cast {spell.name}.", 0
 
     # ── Per-move tick ──────────────────────────────────────────────────────────

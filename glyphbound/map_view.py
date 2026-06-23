@@ -1,4 +1,5 @@
 from rich.segment import Segment
+from rich.style import Style as RichStyle
 from textual.strip import Strip
 from textual.widget import Widget
 
@@ -33,12 +34,10 @@ class MapView(Widget):
             else:
                 monster = dungeon.monster_at(mx, my)
                 if monster:
-                    from rich.style import Style as RichStyle
                     segments.append(Segment(monster.glyph, RichStyle(color="bright_red", bold=True)))
                 else:
                     floor_items = dungeon.items_at(mx, my)
                     if floor_items:
-                        from rich.style import Style as RichStyle
                         segments.append(Segment(floor_items[-1].glyph, RichStyle(color="bright_cyan", bold=True)))
                     else:
                         tile = dungeon.tile_at(mx, my)

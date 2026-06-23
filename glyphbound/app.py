@@ -2,10 +2,15 @@ from __future__ import annotations
 
 from textual.app import App, ComposeResult
 from textual.screen import Screen
-from textual.widgets import Static, Input
+from textual.widgets import Static, Input, RichLog
 from textual.reactive import reactive
 
-from .combat import resolve_combat
+import logging
+import random
+import re
+
+from .combat import apply_spell_to_monster
+from .combat_screen import CombatResult, CombatScreen
 from .dungeon import STAIR_DOWN, STAIR_UP, generate_dungeon
 from .items import EquipSlot, Item, ItemKind
 from .map_view import MapView
@@ -166,20 +171,23 @@ class StatsPanel(Static):
 
 # ── Message log (bottom-right) ─────────────────────────────────────────────────
 
-class MessageLog(Static):
+_MARKUP_RE = re.compile(r"\[/?[^\]]*\]")
+
+
+def _strip_markup(text: str) -> str:
+    """Remove Rich markup tags so the file log stores clean plaintext."""
+    return _MARKUP_RE.sub("", text)
+
+
+class MessageLog(RichLog):
+    _logger = logging.getLogger("glyphbound.messagelog")
+
     def __init__(self) -> None:
-        super().__init__()
-        self._messages: list[str] = []
+        super().__init__(max_lines=100, markup=True, auto_scroll=True)
 
     def add(self, msg: str) -> None:
-        self._messages.append(msg)
-        if len(self._messages) > 6:
-            self._messages = self._messages[-6:]
-        self.update("\n".join(self._messages))
-
-    def clear(self) -> None:
-        self._messages = []
-        self.update("")
+        self.write(msg)
+        self._logger.info(_strip_markup(msg))
 
 
 # ── Inventory screen ──────────────────────────────────────────────────────────
@@ -425,15 +433,17 @@ class GlyphboundApp(App):
     """
 
     BINDINGS = [
-        ("w", "move_up",    "Move up"),
-        ("s", "move_down",  "Move down"),
-        ("a", "move_left",  "Move left"),
-        ("d", "move_right", "Move right"),
-        ("g", "get_item",   "Get item"),
-        ("i", "inventory",  "Inventory"),
-        ("z", "spells",     "Spells"),
-        ("q", "quit",       "Quit"),
-        ("escape", "quit",  "Quit"),
+        ("w", "move_up",         "Move up"),
+        ("s", "move_down",       "Move down"),
+        ("a", "move_left",       "Move left"),
+        ("d", "move_right",      "Move right"),
+        ("g", "get_item",        "Get item"),
+        ("i", "inventory",       "Inventory"),
+        ("z", "spells",          "Spells"),
+        ("pageup",   "scroll_log_up",   "Scroll log up"),
+        ("pagedown", "scroll_log_down", "Scroll log down"),
+        ("q", "quit",            "Quit"),
+        ("escape", "quit",       "Quit"),
     ]
 
     def compose(self) -> ComposeResult:
@@ -478,21 +488,19 @@ class GlyphboundApp(App):
     def action_move_left(self)  -> None: self._move(-1, 0)
     def action_move_right(self) -> None: self._move(1,  0)
 
+    def action_scroll_log_up(self)   -> None: self.message_log.scroll_up()
+    def action_scroll_log_down(self) -> None: self.message_log.scroll_down()
+
     def _move(self, dx: int, dy: int) -> None:
         if not self.player:
             return
         nx, ny = self.dungeon.party_x + dx, self.dungeon.party_y + dy
         monster = self.dungeon.monster_at(nx, ny)
         if monster:
-            log, survived = resolve_combat(self.player, monster)
-            for line in log:
-                self.message_log.add(line)
-            if monster.hp == 0:
-                self.dungeon.remove_monster(nx, ny)
-            self.stats_panel.refresh()
-            self.map_view.refresh()
-            if not survived:
-                self._player_died()
+            self.push_screen(
+                CombatScreen(self.player, monster, (nx, ny)),
+                callback=self._combat_finished,
+            )
             return
 
         self.dungeon.move_party(dx, dy)
@@ -513,6 +521,16 @@ class GlyphboundApp(App):
 
     def _player_died(self) -> None:
         self.message_log.add("── GAME OVER ──  Press Q to quit.")
+
+    def _combat_finished(self, result: CombatResult) -> None:
+        for line in result.log:
+            self.message_log.add(line)
+        if result.monster_killed:
+            self.dungeon.remove_monster(*result.pos)
+        self.stats_panel.refresh()
+        self.map_view.refresh()
+        if not result.survived and not result.fled:
+            self._player_died()
 
     def action_get_item(self) -> None:
         if not self.player:
@@ -543,69 +561,26 @@ class GlyphboundApp(App):
     def action_spells(self) -> None:
         if not self.player:
             return
-        if self.player.char_class != CharacterClass.WIZARD:
-            self.message_log.add("Only Wizards can cast spells.")
+        if not self.player.spells:
+            self.message_log.add("Your class cannot cast spells.")
             return
         self.push_screen(SpellScreen(self.player), callback=self._spell_chosen)
-
-    def _nearest_monster(self):
-        """Return ((x, y), Monster) for the closest monster, or None."""
-        px, py = self.dungeon.party_x, self.dungeon.party_y
-        return min(
-            self.dungeon.monsters.items(),
-            key=lambda kv: abs(kv[0][0] - px) + abs(kv[0][1] - py),
-            default=None,
-        )
-
-    def _apply_monster_damage(self, pos, monster, dmg: int) -> None:
-        monster.hp = max(0, monster.hp - dmg)
-        self.message_log.add(
-            f"  {monster.name} takes {dmg} damage! HP: {monster.hp}/{monster.max_hp}"
-        )
-        if monster.hp == 0:
-            self.player.xp += monster.xp_value
-            self.dungeon.remove_monster(*pos)
-            self.message_log.add(f"  {monster.name} is slain! +{monster.xp_value} XP")
 
     def _spell_chosen(self, spell: Spell | None) -> None:
         if spell is None:
             return
 
-        if spell.effect == SpellEffect.DAMAGE:
-            nearest = self._nearest_monster()
+        if spell.effect in (SpellEffect.DAMAGE, SpellEffect.TURN_UNDEAD):
+            nearest = self.dungeon.nearest_monster()
             if nearest is None:
                 self.message_log.add("No monsters in range.")
                 return
             pos, monster = nearest
-            msg, dmg = self.player.cast_spell(spell)
-            self.message_log.add(msg)
-            if dmg:
-                self._apply_monster_damage(pos, monster, dmg)
-
-        elif spell.effect == SpellEffect.TURN_UNDEAD:
-            nearest = self._nearest_monster()
-            if nearest is None:
-                self.message_log.add("No monsters in range.")
-                return
-            pos, monster = nearest
-            if not monster.is_undead:
-                self.message_log.add(f"Turn Undead has no effect on {monster.name}.")
-                return
-            msg, _ = self.player.cast_spell(spell)
-            self.message_log.add(msg)
-            # Weak undead (hp ≤ 10) are destroyed outright; stronger take heavy damage
-            if monster.max_hp <= 10:
-                self.message_log.add(
-                    f"  {monster.name} crumbles to dust!"
-                )
-                self.player.xp += monster.xp_value
+            log, killed = apply_spell_to_monster(self.player, spell, monster)
+            for line in log:
+                self.message_log.add(line)
+            if killed:
                 self.dungeon.remove_monster(*pos)
-                self.message_log.add(f"  +{monster.xp_value} XP")
-            else:
-                import random
-                dmg = random.randint(monster.max_hp // 2, monster.max_hp - 1)
-                self._apply_monster_damage(pos, monster, dmg)
-
         else:
             msg, _ = self.player.cast_spell(spell)
             self.message_log.add(msg)
