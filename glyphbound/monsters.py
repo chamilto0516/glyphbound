@@ -15,6 +15,12 @@ class MonsterKind(Enum):
     ZOMBIE   = "Zombie"
 
 
+class AIState(Enum):
+    WANDER = "wander"    # random movement
+    CHASE  = "chase"     # pursue player
+    GUARD  = "guard"     # stay near spawn point
+
+
 @dataclass
 class Monster:
     kind: MonsterKind
@@ -28,6 +34,13 @@ class Monster:
     is_undead: bool = False
     weapon: Optional[Item] = field(default=None)
 
+    # AI state
+    ai_state: AIState = AIState.WANDER
+    spawn_x: int = 0
+    spawn_y: int = 0
+    chase_range: int = 8  # tiles within which monster chases player
+    guard_range: int = 5  # tiles guard monsters stay within from spawn
+
 
 def spawn_goblin() -> Monster:
     return Monster(
@@ -38,6 +51,8 @@ def spawn_goblin() -> Monster:
         attack=1, defense=1,
         xp_value=1,
         weapon=ITEM_CLUB,
+        ai_state=AIState.WANDER,
+        chase_range=10,  # goblins are aggressive, chase from far
     )
 
 
@@ -50,6 +65,8 @@ def spawn_orc() -> Monster:
         attack=3, defense=2,
         xp_value=3,
         weapon=ITEM_SHORT_SWORD,
+        ai_state=AIState.WANDER,
+        chase_range=8,
     )
 
 
@@ -62,6 +79,9 @@ def spawn_troll() -> Monster:
         attack=5, defense=3,
         xp_value=6,
         weapon=ITEM_BROAD_SWORD,
+        ai_state=AIState.GUARD,  # trolls guard their territory
+        chase_range=6,
+        guard_range=8,
     )
 
 
@@ -75,6 +95,8 @@ def spawn_skeleton() -> Monster:
         xp_value=2,
         is_undead=True,
         weapon=ITEM_SHORT_SWORD,
+        ai_state=AIState.WANDER,
+        chase_range=7,
     )
 
 
@@ -88,6 +110,8 @@ def spawn_zombie() -> Monster:
         xp_value=4,
         is_undead=True,
         weapon=ITEM_CLUB,
+        ai_state=AIState.WANDER,
+        chase_range=5,  # zombies are slow, won't chase far
     )
 
 

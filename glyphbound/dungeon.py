@@ -90,6 +90,23 @@ class Dungeon:
     def remove_monster(self, x: int, y: int) -> None:
         self.monsters.pop((x, y), None)
 
+    def move_monster(self, old_x: int, old_y: int, new_x: int, new_y: int) -> bool:
+        """Move a monster from (old_x, old_y) to (new_x, new_y). Returns True if moved."""
+        monster = self.monsters.get((old_x, old_y))
+        if not monster:
+            return False
+        # Check destination is not occupied by another monster
+        if self.monster_at(new_x, new_y) is not None:
+            return False
+        # Check destination is walkable (not player — that triggers combat)
+        tile = self.tile_at(new_x, new_y)
+        if tile not in (FLOOR, DOOR_OPEN, STAIR_DOWN, STAIR_UP):
+            return False
+        # Move
+        del self.monsters[(old_x, old_y)]
+        self.monsters[(new_x, new_y)] = monster
+        return True
+
     def nearest_monster(self):
         """Return ((x, y), Monster) for the closest monster by Manhattan distance, or None."""
         return min(
@@ -221,6 +238,7 @@ def generate_dungeon(seed: int = None, theme: Theme = None, floor: int = 1, plac
             room       = rng.choice(zone)
             mx, my     = room.center
             m = spawner()
+            m.spawn_x, m.spawn_y = mx, my  # set spawn location for AI
             dungeon.place_monster(mx, my, m)
             logger.info("monster %s '%s' hp%d atk%d def%d xp%d at %s",
                         m.name, m.glyph, m.hp, m.attack, m.defense, m.xp_value, (mx, my))
@@ -231,6 +249,7 @@ def generate_dungeon(seed: int = None, theme: Theme = None, floor: int = 1, plac
         for i, spawner in enumerate(ALL_SPAWNERS[:n]):
             mx, my = candidate_rooms[i].center
             m = spawner()
+            m.spawn_x, m.spawn_y = mx, my  # set spawn location for AI
             dungeon.place_monster(mx, my, m)
             logger.info("monster %s '%s' hp%d atk%d def%d xp%d at %s",
                         m.name, m.glyph, m.hp, m.attack, m.defense, m.xp_value, (mx, my))

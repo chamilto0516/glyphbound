@@ -505,7 +505,10 @@ class GlyphboundApp(App):
             )
             return
 
-        self.dungeon.move_party(dx, dy)
+        moved = self.dungeon.move_party(dx, dy)
+        if not moved:
+            return  # blocked by wall
+
         self.player.on_move()
         self.stats_panel.refresh()
         x, y = self.dungeon.party_x, self.dungeon.party_y
@@ -515,11 +518,50 @@ class GlyphboundApp(App):
         elif tile == STAIR_UP:
             self._ascend()
         else:
+            # After player moves, run monster AI turns
+            self._monster_turns()
             self.map_view.refresh()
             items = self.dungeon.items_at(x, y)
             if items:
                 names = ", ".join(i.name for i in items)
                 self.message_log.add(f"You see here: {names}. (G to pick up)")
+
+    def _monster_turns(self) -> None:
+        """Execute AI turn for each monster on the map."""
+        from .ai import ai_turn
+
+        # Snapshot positions to avoid mutating dict during iteration
+        monster_positions = list(self.dungeon.monsters.items())
+
+        for (mx, my), monster in monster_positions:
+            # Check monster still exists (might have been killed by another monster bumping player)
+            if self.dungeon.monster_at(mx, my) != monster:
+                continue
+
+            new_pos = ai_turn(self.dungeon, monster, mx, my)
+            if new_pos:
+                new_x, new_y = new_pos
+                # Check if monster is trying to bump player
+                if (new_x, new_y) == (self.dungeon.party_x, self.dungeon.party_y):
+                    # Monster attacks player
+                    self._monster_attacks_player(monster, mx, my)
+                    # Don't move the monster; it stays in place after attacking
+                else:
+                    # Normal movement
+                    self.dungeon.move_monster(mx, my, new_x, new_y)
+
+    def _monster_attacks_player(self, monster, mx: int, my: int) -> None:
+        """Handle a monster attacking the player from (mx, my)."""
+        from .combat import execute_monster_attack
+
+        lines = execute_monster_attack(self.player, monster)
+        for line in lines:
+            self.message_log.add(line)
+
+        self.stats_panel.refresh()
+
+        if self.player.hp == 0:
+            self._player_died()
 
     def _player_died(self) -> None:
         self.message_log.add("── GAME OVER ──  Press Q to quit.")

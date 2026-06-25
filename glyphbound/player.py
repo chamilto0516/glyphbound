@@ -66,6 +66,7 @@ class Player:
     equipped:  Dict[str, Item]        = field(default_factory=dict)  # slot name → Item
     spells:    List[Spell]            = field(default_factory=list)
     temp_defense_bonus: int           = 0   # cleared after each combat
+    temp_attack_bonus: int            = 0   # cleared after each combat
 
     def __post_init__(self) -> None:
         stats = _CLASS_STATS[self.char_class]
@@ -75,17 +76,21 @@ class Player:
         self._base_defense = stats["defense"]
         self.max_mp        = stats["mp"]
         self.mp            = stats["mp"]
+        self._learn_spells_for_level()
+
+    def _learn_spells_for_level(self) -> None:
+        """Add all spells available at current level."""
         if self.char_class == CharacterClass.WIZARD:
-            self.spells = list(WIZARD_SPELLS)
+            self.spells = [s for s in WIZARD_SPELLS if s.min_level <= self.level]
         elif self.char_class == CharacterClass.CLERIC:
-            self.spells = list(CLERIC_SPELLS)
+            self.spells = [s for s in CLERIC_SPELLS if s.min_level <= self.level]
 
     # ── Computed stats ─────────────────────────────────────────────────────────
 
     @property
     def attack(self) -> int:
         bonus = sum(i.attack_bonus for i in self.equipped.values())
-        return self._base_attack + bonus
+        return self._base_attack + bonus + self.temp_attack_bonus
 
     @property
     def defense(self) -> int:
@@ -156,7 +161,7 @@ class Player:
         """
         Attempt to cast a spell. Returns (message, damage_dealt).
         damage_dealt is >0 only for DAMAGE spells — caller applies it to monster.
-        DEF buff is applied in-place here.
+        Buffs are applied in-place here.
         """
         if spell not in self.spells:
             return "You don't know that spell.", 0
@@ -169,7 +174,11 @@ class Player:
         if spell.effect == SpellEffect.BUFF_DEF:
             bonus = sum(random.randint(1, spell.def_sides) for _ in range(spell.def_count))
             self.temp_defense_bonus += bonus
-            return f"Magic Armor conjured! +{bonus} DEF for next combat.", 0
+            return f"You cast {spell.name}! +{bonus} DEF for next combat.", 0
+        if spell.effect == SpellEffect.BUFF_ATK:
+            bonus = sum(random.randint(1, spell.atk_sides) for _ in range(spell.atk_count))
+            self.temp_attack_bonus += bonus
+            return f"You cast {spell.name}! +{bonus} ATK for next combat.", 0
         if spell.effect == SpellEffect.HEAL:
             healed = sum(random.randint(1, spell.heal_sides) for _ in range(spell.heal_count))
             healed = min(healed, self.max_hp - self.hp)
@@ -177,6 +186,10 @@ class Player:
             return f"You cast {spell.name}. +{healed} HP restored. (HP: {self.hp}/{self.max_hp})", 0
         if spell.effect == SpellEffect.TURN_UNDEAD:
             return f"You invoke {spell.name}!", 0
+        if spell.effect == SpellEffect.DETECT:
+            return f"You cast {spell.name}. (Detection not yet implemented.)", 0
+        if spell.effect == SpellEffect.BLINK:
+            return f"You cast {spell.name}. (Blink not yet implemented.)", 0
         return f"Cast {spell.name}.", 0
 
     # ── Per-move tick ──────────────────────────────────────────────────────────
@@ -195,6 +208,7 @@ class Player:
         """
         messages = []
         leveled = False
+        old_spell_count = len(self.spells)
         while self.xp >= xp_for_level(self.level + 1):
             self.level += 1
             leveled = True
@@ -205,6 +219,10 @@ class Player:
             self._base_defense += gains["defense"]
             self.max_mp += gains["mp"]
             self.mp += gains["mp"]  # restore by the gain amount
+
+            # Learn new spells
+            self._learn_spells_for_level()
+
             messages.append(f"[bold green]LEVEL UP! You are now level {self.level}![/bold green]")
             parts = []
             if gains["hp"]:
@@ -217,6 +235,13 @@ class Player:
                 parts.append(f"+{gains['mp']} MP")
             if parts:
                 messages.append("  " + "  ".join(parts))
+
+        # Report new spells learned
+        if leveled and len(self.spells) > old_spell_count:
+            new_spells = self.spells[old_spell_count:]
+            for spell in new_spells:
+                messages.append(f"  [bold cyan]Learned spell: {spell.name}[/bold cyan]")
+
         return leveled, messages
 
     # ── Helpers ────────────────────────────────────────────────────────────────

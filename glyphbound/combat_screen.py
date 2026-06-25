@@ -28,6 +28,69 @@ class CombatResult:
     log: List[str] = field(default_factory=list)
 
 
+# ── Potion-select screen ──────────────────────────────────────────────────────
+
+class PotionSelectScreen(Screen):
+    CSS = """
+    PotionSelectScreen {
+        background: rgba(0,0,0,0.85);
+        align: center middle;
+    }
+
+    #pot-box {
+        width: 44;
+        height: auto;
+        border: double ansi_bright_yellow;
+        padding: 1 2;
+        background: black;
+    }
+
+    #pot-title {
+        text-align: center;
+        text-style: bold;
+        color: ansi_bright_yellow;
+        margin-bottom: 1;
+    }
+
+    #pot-hint {
+        color: #888888;
+        margin-top: 1;
+    }
+
+    .pot-line {
+        color: white;
+    }
+    """
+
+    def __init__(self, player: Player) -> None:
+        super().__init__()
+        self.player = player
+
+    def _potions(self) -> List[Item]:
+        return [i for i in self.player.inventory if i.kind == ItemKind.POTION]
+
+    def compose(self) -> ComposeResult:
+        potions = self._potions()
+        with Static(id="pot-box"):
+            yield Static("Use Potion", id="pot-title")
+            if not potions:
+                yield Static("[dim](no potions in inventory)[/dim]", classes="pot-line")
+            else:
+                for i, p in enumerate(potions):
+                    yield Static(f"[bold]{i+1}.[/bold]  {p}", classes="pot-line")
+            yield Static("Press number to drink. Esc to cancel.", id="pot-hint")
+
+    def on_key(self, event) -> None:
+        if event.key == "escape":
+            self.dismiss(None)
+            return
+        potions = self._potions()
+        if event.character and event.character.isdigit():
+            idx = int(event.character) - 1
+            if 0 <= idx < len(potions):
+                self.dismiss(potions[idx])
+
+
 # ── Weapon-select screen ───────────────────────────────────────────────────────
 
 class WeaponSelectScreen(Screen):
@@ -209,6 +272,7 @@ class CombatScreen(Screen):
         weapon = p.equipped.get(EquipSlot.WEAPON.value)
         wpn_label = weapon.name if weapon else "fists"
         has_inv_weapons = any(i.kind == ItemKind.WEAPON for i in p.inventory)
+        has_potions = any(i.kind == ItemKind.POTION for i in p.inventory)
 
         parts = [f"[bold](A)[/bold]ttack [{wpn_label}]"]
         if has_inv_weapons:
@@ -217,6 +281,8 @@ class CombatScreen(Screen):
             can_cast = any(s.mp_cost <= p.mp for s in p.spells)
             spell_label = "[bold](Z)[/bold]Spell" if can_cast else "[dim](Z)Spell[/dim]"
             parts.append(spell_label)
+        if has_potions:
+            parts.append("[bold](P)[/bold]otion")
         parts.append("[bold](F)[/bold]lee")
         self.query_one("#combat-actions", Static).update("  ".join(parts))
 
@@ -225,8 +291,9 @@ class CombatScreen(Screen):
         self._result_log.extend(lines)
 
     def _end_combat(self, survived: bool, fled: bool, monster_killed: bool) -> None:
-        if monster_killed:
-            self.player.temp_defense_bonus = 0
+        # Clear temp buffs after combat
+        self.player.temp_defense_bonus = 0
+        self.player.temp_attack_bonus = 0
         result = CombatResult(
             survived=survived,
             fled=fled,
@@ -244,6 +311,8 @@ class CombatScreen(Screen):
             self._do_weapon()
         elif key == "z":
             self._do_spell()
+        elif key == "p":
+            self._do_potion()
         elif key == "f":
             self._do_flee()
         else:
@@ -263,6 +332,9 @@ class CombatScreen(Screen):
         if self.monster.hp == 0:
             self.player.xp += self.monster.xp_value
             self._push_log([f"You defeated the {self.monster.name}! +{self.monster.xp_value} XP"])
+            leveled, level_msgs = self.player.check_level_up()
+            if leveled:
+                self._push_log(level_msgs)
             self._refresh()
             self._end_combat(survived=True, fled=False, monster_killed=True)
             return
@@ -300,6 +372,9 @@ class CombatScreen(Screen):
             self._push_log(log)
             if killed:
                 self._push_log([f"You defeated the {self.monster.name}! +{self.monster.xp_value} XP"])
+                leveled, level_msgs = self.player.check_level_up()
+                if leveled:
+                    self._push_log(level_msgs)
                 self._refresh()
                 self._end_combat(survived=True, fled=False, monster_killed=True)
                 return
@@ -308,6 +383,31 @@ class CombatScreen(Screen):
             self._push_log([msg])
 
         # Monster counter-attacks after player spell
+        if self.monster.hp > 0:
+            lines = execute_monster_attack(self.player, self.monster)
+            self._push_log(lines)
+
+        self._refresh()
+
+        if self.player.hp == 0:
+            self._push_log([f"You have been slain by the {self.monster.name}..."])
+            self._end_combat(survived=False, fled=False, monster_killed=False)
+
+    def _do_potion(self) -> None:
+        if not any(i.kind == ItemKind.POTION for i in self.player.inventory):
+            return
+        self.app.push_screen(PotionSelectScreen(self.player), callback=self._potion_chosen)
+
+    def _potion_chosen(self, item: Optional[Item]) -> None:
+        if item is None:
+            self._refresh()
+            return
+
+        # Use the potion (doesn't consume turn, but monster attacks after)
+        msg = self.player.use_potion(item)
+        self._push_log([f"  {msg}"])
+
+        # Monster counter-attacks after player uses potion
         if self.monster.hp > 0:
             lines = execute_monster_attack(self.player, self.monster)
             self._push_log(lines)

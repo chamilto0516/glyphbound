@@ -89,12 +89,12 @@ pip freeze > requirements.txt   # keep this in sync
 - [ ] Run summary stats: kills, floor reached, Glyphs learned, cause of death
 
 ## Monsters and AI
-- [ ] Multiple monster types with different stats and symbols
-- [ ] Simple AI: wander, chase, flee, guard, patrol
+- [x] Multiple monster types with different stats and symbols
+- [x] Simple AI: wander, chase, guard (flee and patrol not yet implemented)
 - [ ] Ranged enemies and spellcasters
 - [ ] Glyph-themed enemies: Ink Wraith, Syntax Serpent, Living Rune, Null Beast
 - [ ] Monster status effects
-- [ ] Spawn tables by floor and dungeon theme
+- [x] Spawn tables by floor and dungeon theme
 - [ ] Named elite monsters
 
 ## Combat

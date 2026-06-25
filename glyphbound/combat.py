@@ -98,7 +98,8 @@ def resolve_combat(player: Player, monster: Monster) -> Tuple[List[str], bool]:
             break
         log.extend(execute_monster_attack(player, monster))
 
-    player.temp_defense_bonus = 0  # Magic Armor expires after each combat
+    player.temp_defense_bonus = 0  # buffs expire after each combat
+    player.temp_attack_bonus = 0
 
     if monster.hp == 0:
         player.xp += monster.xp_value
