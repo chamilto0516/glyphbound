@@ -334,6 +334,7 @@ class CombatScreen(Screen):
 
         if self.monster.hp == 0:
             self.player.xp += self.monster.xp_value
+            self.player.stat_monsters_killed += 1
             self._push_log([f"You defeated the {self.monster.name}! +{self.monster.xp_value} XP"])
             leveled, level_msgs = self.player.check_level_up()
             if leveled:

@@ -63,6 +63,7 @@ def execute_monster_attack(player: Player, monster: Monster) -> List[str]:
     if _attacker_hits(m_roll, player.defense):
         dmg = roll_damage(monster.weapon)
         player.hp = max(0, player.hp - dmg)
+        player.stat_damage_taken += dmg
         wpn_name = monster.weapon.name if monster.weapon else "claws"
         log.append(f"  {monster.name} hits you with {wpn_name} for {dmg}! Your HP: {player.hp}/{player.max_hp}")
     else:
@@ -104,6 +105,7 @@ def resolve_combat(player: Player, monster: Monster) -> Tuple[List[str], bool, L
     loot: List[Item] = []
     if monster.hp == 0:
         player.xp += monster.xp_value
+        player.stat_monsters_killed += 1
         log.append(f"You defeated the {monster.name}! +{monster.xp_value} XP")
         leveled, level_msgs = player.check_level_up()
         if leveled:
@@ -157,6 +159,7 @@ def apply_spell_to_monster(
     loot: List[Item] = []
     if killed:
         player.xp += monster.xp_value
+        player.stat_monsters_killed += 1
         log.append(f"  {monster.name} is slain! +{monster.xp_value} XP")
         leveled, level_msgs = player.check_level_up()
         if leveled:

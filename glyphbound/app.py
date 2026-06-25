@@ -86,6 +86,83 @@ class ClassSelectScreen(Screen):
 
 # ── Quit confirmation screen ───────────────────────────────────────────────────
 
+class DeathScreen(Screen):
+    CSS = """
+    DeathScreen {
+        background: rgba(0,0,0,0.92);
+        align: center middle;
+    }
+
+    #death-box {
+        width: 56;
+        height: auto;
+        border: double ansi_bright_red;
+        padding: 1 2;
+        background: black;
+    }
+
+    #death-title {
+        text-align: center;
+        text-style: bold;
+        color: ansi_bright_red;
+        margin-bottom: 0;
+    }
+
+    #death-subtitle {
+        text-align: center;
+        color: #888888;
+        margin-bottom: 1;
+    }
+
+    #death-sep {
+        color: #333333;
+        margin-bottom: 1;
+    }
+
+    .stat-row {
+        color: white;
+    }
+
+    #death-hint {
+        text-align: center;
+        color: #555555;
+        margin-top: 1;
+    }
+    """
+
+    def __init__(self, player: "Player", floor: int) -> None:
+        super().__init__()
+        self.player = player
+        self.floor  = floor
+
+    def compose(self) -> ComposeResult:
+        p = self.player
+        with Static(id="death-box"):
+            yield Static("✝  YOU HAVE DIED  ✝", id="death-title")
+            yield Static(
+                f"{p.name} the {p.char_class.value}  —  slain on floor {self.floor}",
+                id="death-subtitle",
+            )
+            yield Static("[dim]────────────────────────────────────────────────────[/dim]", id="death-sep")
+            yield Static(f"  Level reached      {p.level}",                           classes="stat-row")
+            yield Static(f"  XP earned          {p.xp}",                              classes="stat-row")
+            yield Static(f"  Gold collected     {p.stat_gold_collected} gp",          classes="stat-row")
+            yield Static(f"  Floors descended   {p.stat_floors_descended}",           classes="stat-row")
+            yield Static(f"  Squares traveled   {p.stat_squares_traveled:,}",         classes="stat-row")
+            yield Static(f"  Monsters defeated  {p.stat_monsters_killed}",            classes="stat-row")
+            yield Static(f"  Damage taken       {p.stat_damage_taken}",               classes="stat-row")
+            yield Static(f"  Items found        {p.stat_items_found}",                classes="stat-row")
+            yield Static(f"  MP spent           {p.stat_mp_spent}",                   classes="stat-row")
+            yield Static("[dim]────────────────────────────────────────────────────[/dim]", id="death-sep")
+            yield Static("Press Q to quit  or  R to restart", id="death-hint")
+
+    def on_key(self, event) -> None:
+        if event.key == "q":
+            self.app.exit()
+        elif event.key == "r":
+            self.dismiss(True)
+
+
 class QuitConfirmScreen(Screen):
     CSS = """
     QuitConfirmScreen {
@@ -622,7 +699,22 @@ class GlyphboundApp(App):
             self._player_died()
 
     def _player_died(self) -> None:
-        self.message_log.add("── GAME OVER ──  Press Q to quit.")
+        self.message_log.add("── YOU HAVE DIED ──")
+        self.push_screen(
+            DeathScreen(self.player, self.dungeon.floor),
+            callback=self._death_dismissed,
+        )
+
+    def _death_dismissed(self, restart: bool) -> None:
+        if restart:
+            self.dungeon = generate_dungeon(floor=1, place_up_stair=False)
+            self._floor_stack.clear()
+            self.player = None
+            self.stats_panel.player = None
+            self.map_view.dungeon = self.dungeon
+            self.map_view.refresh()
+            self._update_title()
+            self.push_screen(ClassSelectScreen(), callback=self._class_chosen)
 
     def _combat_finished(self, result: CombatResult) -> None:
         for line in result.log:
@@ -709,6 +801,8 @@ class GlyphboundApp(App):
         sx, sy = self.dungeon.stair_down_pos
         self._floor_stack.append((self.dungeon, sx, sy))
         next_floor = self.dungeon.floor + 1
+        if self.player:
+            self.player.stat_floors_descended += 1
         self.dungeon = generate_dungeon(floor=next_floor, place_up_stair=True)
         self.map_view.dungeon = self.dungeon
         self.map_view.refresh()

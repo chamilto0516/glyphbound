@@ -58,6 +58,15 @@ class Player:
     max_mp: int  = 0
     gold: int    = 0
 
+    # ── Run statistics ─────────────────────────────────────────────────────────
+    stat_squares_traveled: int  = 0
+    stat_floors_descended: int  = 0
+    stat_items_found:      int  = 0
+    stat_damage_taken:     int  = 0
+    stat_mp_spent:         int  = 0
+    stat_monsters_killed:  int  = 0
+    stat_gold_collected:   int  = 0
+
     # base stats from class; equipped gear adds on top via properties
     _base_attack: int  = field(default=0, repr=False)
     _base_defense: int = field(default=0, repr=False)
@@ -119,6 +128,12 @@ class Player:
 
     def pick_up(self, item: Item) -> str:
         self.inventory.append(item)
+        self.stat_items_found += 1
+        if item.kind == ItemKind.TREASURE and item.gold_value > 0:
+            self.gold += item.gold_value
+            self.stat_gold_collected += item.gold_value
+            self.inventory.remove(item)  # gold goes straight to wallet
+            return f"Picked up {item.name}. (+{item.gold_value} gp)"
         return f"Picked up {item.name}."
 
     def equip(self, item: Item) -> Tuple[str, Optional[Item]]:
@@ -186,6 +201,7 @@ class Player:
         if self.mp < spell.mp_cost:
             return f"Not enough MP to cast {spell.name}. (need {spell.mp_cost})", 0
         self.mp -= spell.mp_cost
+        self.stat_mp_spent += spell.mp_cost
         if spell.effect == SpellEffect.DAMAGE:
             dmg = sum(random.randint(1, spell.damage_sides) for _ in range(spell.damage_count))
             return f"You cast {spell.name} for {dmg} damage!", dmg
@@ -213,6 +229,7 @@ class Player:
     # ── Per-move tick ──────────────────────────────────────────────────────────
 
     def on_move(self) -> None:
+        self.stat_squares_traveled += 1
         if self.mp < self.max_mp:
             self.mp = min(self.max_mp, self.mp + 1)
 
