@@ -81,12 +81,12 @@ def execute_flee_attempt(player: Player, monster: Monster) -> Tuple[List[str], b
     return log, False
 
 
-def resolve_combat(player: Player, monster: Monster) -> Tuple[List[str], bool]:
+def resolve_combat(player: Player, monster: Monster) -> Tuple[List[str], bool, List[Item]]:
     """
     Run combat to completion. Player always strikes first each round.
     Wizards cast their best affordable damage spell each round; all other
     classes use their equipped weapon.
-    Returns (log_lines, player_survived).
+    Returns (log_lines, player_survived, loot_drops).
     xp and hp changes are applied directly to player and monster.
     """
     log: List[str] = []
@@ -101,26 +101,32 @@ def resolve_combat(player: Player, monster: Monster) -> Tuple[List[str], bool]:
     player.temp_defense_bonus = 0  # buffs expire after each combat
     player.temp_attack_bonus = 0
 
+    loot: List[Item] = []
     if monster.hp == 0:
         player.xp += monster.xp_value
         log.append(f"You defeated the {monster.name}! +{monster.xp_value} XP")
         leveled, level_msgs = player.check_level_up()
         if leveled:
             log.extend(level_msgs)
-        return log, True
+        # Generate loot
+        loot = monster.drop_loot()
+        if loot:
+            loot_names = ", ".join(item.name for item in loot)
+            log.append(f"  {monster.name} dropped: {loot_names}")
+        return log, True, loot
     else:
         log.append(f"You have been slain by the {monster.name}...")
-        return log, False
+        return log, False, []
 
 
 def apply_spell_to_monster(
     player: Player,
     spell: Spell,
     monster: Monster,
-) -> Tuple[List[str], bool]:
+) -> Tuple[List[str], bool, List[Item]]:
     """
     Apply a single out-of-combat spell to a monster.
-    Returns (log_lines, monster_killed).
+    Returns (log_lines, monster_killed, loot_drops).
     Mutates monster.hp and player.xp in-place.
     Caller must call dungeon.remove_monster() when monster_killed is True.
     """
@@ -136,7 +142,7 @@ def apply_spell_to_monster(
     elif spell.effect == SpellEffect.TURN_UNDEAD:
         if not monster.is_undead:
             log.append(f"Turn Undead has no effect on {monster.name}.")
-            return log, False
+            return log, False, []
         msg, _ = player.cast_spell(spell)
         log.append(msg)
         if monster.max_hp <= TURN_UNDEAD_WEAK_THRESHOLD:
@@ -148,11 +154,17 @@ def apply_spell_to_monster(
             log.append(f"  {monster.name} takes {dmg} damage! HP: {monster.hp}/{monster.max_hp}")
 
     killed = monster.hp == 0
+    loot: List[Item] = []
     if killed:
         player.xp += monster.xp_value
         log.append(f"  {monster.name} is slain! +{monster.xp_value} XP")
         leveled, level_msgs = player.check_level_up()
         if leveled:
             log.extend(level_msgs)
+        # Generate loot
+        loot = monster.drop_loot()
+        if loot:
+            loot_names = ", ".join(item.name for item in loot)
+            log.append(f"  {monster.name} dropped: {loot_names}")
 
-    return log, killed
+    return log, killed, loot

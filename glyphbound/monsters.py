@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import random
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Optional
+from typing import List, Optional
 
-from .items import Item, ITEM_CLUB, ITEM_SHORT_SWORD, ITEM_BROAD_SWORD
+from .items import (
+    Item, ITEM_CLUB, ITEM_SHORT_SWORD, ITEM_BROAD_SWORD,
+    ITEM_GOLD_PILE_SMALL, ITEM_GOLD_PILE_MEDIUM, ITEM_GOLD_PILE_LARGE,
+    COMMON_WEAPONS, COMMON_ARMOR, POTIONS
+)
 
 
 class MonsterKind(Enum):
@@ -40,6 +45,43 @@ class Monster:
     spawn_y: int = 0
     chase_range: int = 8  # tiles within which monster chases player
     guard_range: int = 5  # tiles guard monsters stay within from spawn
+
+    def drop_loot(self) -> List[Item]:
+        """Generate random loot drops for this monster. Called on death."""
+        loot: List[Item] = []
+
+        # Guaranteed gold based on monster type
+        if self.kind == MonsterKind.GOBLIN:
+            loot.append(ITEM_GOLD_PILE_SMALL)
+            # 10% chance for weapon
+            if random.random() < 0.1:
+                loot.append(random.choice(COMMON_WEAPONS))
+        elif self.kind == MonsterKind.SKELETON:
+            loot.append(ITEM_GOLD_PILE_SMALL)
+            # 15% chance for weapon or armor
+            if random.random() < 0.15:
+                loot.append(random.choice(COMMON_WEAPONS + COMMON_ARMOR))
+        elif self.kind == MonsterKind.ORC:
+            loot.append(ITEM_GOLD_PILE_MEDIUM)
+            # 20% chance for weapon, 10% for potion
+            if random.random() < 0.2:
+                loot.append(random.choice(COMMON_WEAPONS))
+            if random.random() < 0.1:
+                loot.append(random.choice(POTIONS))
+        elif self.kind == MonsterKind.ZOMBIE:
+            loot.append(ITEM_GOLD_PILE_SMALL)
+            # 20% chance for potion (corpse had one)
+            if random.random() < 0.2:
+                loot.append(random.choice(POTIONS))
+        elif self.kind == MonsterKind.TROLL:
+            loot.append(ITEM_GOLD_PILE_LARGE)
+            # 30% chance for weapon, 20% for armor
+            if random.random() < 0.3:
+                loot.append(random.choice(COMMON_WEAPONS))
+            if random.random() < 0.2:
+                loot.append(random.choice(COMMON_ARMOR))
+
+        return loot
 
 
 def spawn_goblin() -> Monster:

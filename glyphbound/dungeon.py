@@ -196,13 +196,7 @@ def generate_dungeon(seed: int = None, theme: Theme = None, floor: int = 1, plac
     logger.info("Stairs down at %s; up at %s", dungeon.stair_down_pos, dungeon.stair_up_pos)
 
     item_count = 0
-    if floor == 1:
-        from .items import ITEM_CLUB, ITEM_LEATHER_CAP
-        dungeon.place_item(start_cx + 1, start_cy, ITEM_CLUB)
-        dungeon.place_item(start_cx - 1, start_cy, ITEM_LEATHER_CAP)
-        logger.info("item %s (%s) at %s", ITEM_CLUB.name, ITEM_CLUB.kind.value, (start_cx + 1, start_cy))
-        logger.info("item %s (%s) at %s", ITEM_LEATHER_CAP.name, ITEM_LEATHER_CAP.kind.value, (start_cx - 1, start_cy))
-        item_count += 2
+    # Note: Starting gear (club, leather cap) now equipped on player by default
 
     # Scatter one Elixir of Vitality and one Elixir of Clarity in random rooms.
     from .items import ITEM_ELIXIR_VITALITY, ITEM_ELIXIR_CLARITY
@@ -400,20 +394,15 @@ def _carve_corridor(tiles: List[List[int]], a: Room, b: Room,
 def _place_random_loot(dungeon: Dungeon, rooms: List[Room], rng: random.Random, floor: int) -> int:
     """Place random loot in rooms. Returns count of items placed."""
     from .items import (
-        ITEM_HEALTH_POTION, ITEM_MANA_POTION, ITEM_GEM, ITEM_TORCH, ITEM_RUG,
-        ITEM_DAGGER, ITEM_SHORT_SWORD, ITEM_STAFF, ITEM_LEATHER_ARMOR, ITEM_SMALL_SHIELD
+        COMMON_WEAPONS, RARE_WEAPONS, UNIQUE_WEAPONS,
+        COMMON_ARMOR, RARE_ARMOR, ACCESSORIES,
+        POTIONS, TREASURE, SCROLLS
     )
 
-    # Loot pool based on floor difficulty
-    potions = [ITEM_HEALTH_POTION, ITEM_MANA_POTION]
-    treasure = [ITEM_GEM, ITEM_TORCH, ITEM_RUG]
-    weapons = [ITEM_DAGGER, ITEM_SHORT_SWORD, ITEM_STAFF]
-    armor = [ITEM_LEATHER_ARMOR, ITEM_SMALL_SHIELD]
-
-    # Calculate number of loot drops: 2-4 per floor, increasing slightly with depth
+    # Calculate number of loot drops: 3-6 per floor, increasing with depth
     base_loot = 3
     floor_bonus = min(floor // 2, 3)  # +1 item every 2 floors, capped at +3
-    loot_count = rng.randint(base_loot, base_loot + 1) + floor_bonus
+    loot_count = rng.randint(base_loot, base_loot + 3) + floor_bonus
 
     # Pick random rooms for loot (skip the first room where player starts)
     available_rooms = rooms[1:] if len(rooms) > 1 else rooms
@@ -421,16 +410,37 @@ def _place_random_loot(dungeon: Dungeon, rooms: List[Room], rng: random.Random, 
 
     placed = 0
     for room in loot_rooms:
-        # Weighted random selection: potions most common, weapons/armor rarer
+        # Weighted random selection with floor-based scaling
         roll = rng.random()
-        if roll < 0.4:  # 40% potions
-            item = rng.choice(potions)
-        elif roll < 0.65:  # 25% treasure
-            item = rng.choice(treasure)
-        elif roll < 0.85:  # 20% weapons
-            item = rng.choice(weapons)
-        else:  # 15% armor
-            item = rng.choice(armor)
+
+        # Common drops (60%)
+        if roll < 0.35:  # 35% potions
+            item = rng.choice(POTIONS)
+        elif roll < 0.5:  # 15% treasure
+            item = rng.choice(TREASURE)
+        elif roll < 0.6:  # 10% scrolls
+            item = rng.choice(SCROLLS)
+
+        # Uncommon drops (30%)
+        elif roll < 0.75:  # 15% common weapons
+            item = rng.choice(COMMON_WEAPONS)
+        elif roll < 0.9:  # 15% common armor
+            item = rng.choice(COMMON_ARMOR)
+
+        # Rare drops (8%)
+        elif roll < 0.94 and floor >= 3:  # 4% rare weapons (floor 3+)
+            item = rng.choice(RARE_WEAPONS)
+        elif roll < 0.98 and floor >= 3:  # 4% rare armor (floor 3+)
+            item = rng.choice(RARE_ARMOR)
+
+        # Very rare drops (2%)
+        elif roll < 0.99 and floor >= 5:  # 1% accessories (floor 5+)
+            item = rng.choice(ACCESSORIES)
+        else:  # 1% unique weapons (floor 7+)
+            if floor >= 7:
+                item = rng.choice(UNIQUE_WEAPONS)
+            else:
+                item = rng.choice(COMMON_WEAPONS)  # fallback
 
         # Place slightly offset from center to avoid overlap with monsters/stairs
         cx, cy = room.center

@@ -26,6 +26,7 @@ class CombatResult:
     monster_killed: bool
     pos: Tuple[int, int]
     log: List[str] = field(default_factory=list)
+    loot: List[Item] = field(default_factory=list)
 
 
 # ── Potion-select screen ──────────────────────────────────────────────────────
@@ -236,6 +237,7 @@ class CombatScreen(Screen):
         self.pos = pos
         self._combat_log: List[str] = []
         self._result_log: List[str] = []  # accumulated for CombatResult
+        self._loot: List[Item] = []  # collected loot drops
 
     def compose(self) -> ComposeResult:
         with Static(id="combat-box"):
@@ -300,6 +302,7 @@ class CombatScreen(Screen):
             monster_killed=monster_killed,
             pos=self.pos,
             log=list(self._result_log),
+            loot=list(self._loot),
         )
         self.dismiss(result)
 
@@ -335,6 +338,12 @@ class CombatScreen(Screen):
             leveled, level_msgs = self.player.check_level_up()
             if leveled:
                 self._push_log(level_msgs)
+            # Generate loot
+            loot = self.monster.drop_loot()
+            self._loot.extend(loot)
+            if loot:
+                loot_names = ", ".join(item.name for item in loot)
+                self._push_log([f"  {self.monster.name} dropped: {loot_names}"])
             self._refresh()
             self._end_combat(survived=True, fled=False, monster_killed=True)
             return
@@ -368,13 +377,18 @@ class CombatScreen(Screen):
             return
 
         if spell.effect in (SpellEffect.DAMAGE, SpellEffect.TURN_UNDEAD):
-            log, killed = apply_spell_to_monster(self.player, spell, self.monster)
+            log, killed, loot = apply_spell_to_monster(self.player, spell, self.monster)
             self._push_log(log)
             if killed:
                 self._push_log([f"You defeated the {self.monster.name}! +{self.monster.xp_value} XP"])
                 leveled, level_msgs = self.player.check_level_up()
                 if leveled:
                     self._push_log(level_msgs)
+                # Collect loot
+                self._loot.extend(loot)
+                if loot:
+                    loot_names = ", ".join(item.name for item in loot)
+                    self._push_log([f"  {self.monster.name} dropped: {loot_names}"])
                 self._refresh()
                 self._end_combat(survived=True, fled=False, monster_killed=True)
                 return

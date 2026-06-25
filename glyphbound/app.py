@@ -150,14 +150,19 @@ class StatsPanel(Static):
             return ""
         xp_next = p.xp_to_next_level
         xp_display = f"{p.xp} (next: {xp_next})" if xp_next > 0 else f"{p.xp}"
+
+        # Show max HP/MP with bonuses
+        max_hp_display = f"{p.max_hp + p.max_hp_bonus}"
+        max_mp_display = f"{p.max_mp + p.max_mp_bonus}"
+
         lines = [
             f"[bold yellow]{p.name}[/bold yellow] the {p.char_class.value}",
             f"Lv {p.level}   Floor {self.floor_num}   [yellow]{p.gold}gp[/yellow]",
-            f"HP: [green]{p.hp:>3}[/green]/{p.max_hp:<3}  ATK:{p.attack:<3} DEF:{p.defense}",
+            f"HP: [green]{p.hp:>3}[/green]/{max_hp_display:<3}  ATK:{p.attack:<3} DEF:{p.defense}",
             f"XP: {xp_display}",
         ]
         if p.has_mp:
-            lines.append(f"MP: [cyan]{p.mp:>3}[/cyan]/{p.max_mp}")
+            lines.append(f"MP: [cyan]{p.mp:>3}[/cyan]/{max_mp_display}")
         else:
             lines.append("")
         lines.append("[dim]────────────────────────[/dim]")
@@ -166,8 +171,12 @@ class StatsPanel(Static):
         helmet = p.equipped.get(EquipSlot.HELMET.value)
         armor  = p.equipped.get(EquipSlot.ARMOR.value)
         shield = p.equipped.get(EquipSlot.SHIELD.value)
+        ring   = p.equipped.get(EquipSlot.RING.value)
+        amulet = p.equipped.get(EquipSlot.AMULET.value)
         lines.append(f"[dim]W:[/dim]{weapon.name if weapon else '—':<14} [dim]H:[/dim]{helmet.name if helmet else '—'}")
         lines.append(f"[dim]A:[/dim]{armor.name  if armor  else '—':<14} [dim]S:[/dim]{shield.name if shield else '—'}")
+        if ring or amulet:
+            lines.append(f"[dim]R:[/dim]{ring.name if ring else '—':<14} [dim]N:[/dim]{amulet.name if amulet else '—'}")
         return "\n".join(lines)
 
 
@@ -571,6 +580,9 @@ class GlyphboundApp(App):
             self.message_log.add(line)
         if result.monster_killed:
             self.dungeon.remove_monster(*result.pos)
+            # Place loot drops on the ground
+            for item in result.loot:
+                self.dungeon.place_item(*result.pos, item)
         self.stats_panel.refresh()
         self.map_view.refresh()
         if not result.survived and not result.fled:

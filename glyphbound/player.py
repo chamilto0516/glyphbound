@@ -77,6 +77,7 @@ class Player:
         self.max_mp        = stats["mp"]
         self.mp            = stats["mp"]
         self._learn_spells_for_level()
+        self._equip_starting_gear()
 
     def _learn_spells_for_level(self) -> None:
         """Add all spells available at current level."""
@@ -84,6 +85,13 @@ class Player:
             self.spells = [s for s in WIZARD_SPELLS if s.min_level <= self.level]
         elif self.char_class == CharacterClass.CLERIC:
             self.spells = [s for s in CLERIC_SPELLS if s.min_level <= self.level]
+
+    def _equip_starting_gear(self) -> None:
+        """Give starting equipment and auto-equip it."""
+        from .items import ITEM_CLUB, ITEM_LEATHER_CAP
+        # Everyone starts with a club and leather cap, already equipped
+        self.equipped[EquipSlot.WEAPON.value] = ITEM_CLUB
+        self.equipped[EquipSlot.HELMET.value] = ITEM_LEATHER_CAP
 
     # ── Computed stats ─────────────────────────────────────────────────────────
 
@@ -96,6 +104,16 @@ class Player:
     def defense(self) -> int:
         bonus = sum(i.defense_bonus for i in self.equipped.values())
         return self._base_defense + bonus + self.temp_defense_bonus
+
+    @property
+    def max_hp_bonus(self) -> int:
+        """Bonus max HP from equipped accessories."""
+        return sum(i.hp_bonus for i in self.equipped.values() if i.kind != ItemKind.POTION)
+
+    @property
+    def max_mp_bonus(self) -> int:
+        """Bonus max MP from equipped accessories."""
+        return sum(i.mp_bonus for i in self.equipped.values() if i.kind != ItemKind.POTION)
 
     # ── Inventory actions ──────────────────────────────────────────────────────
 
