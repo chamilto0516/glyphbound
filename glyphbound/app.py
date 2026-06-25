@@ -337,8 +337,9 @@ class InventoryScreen(Screen):
     }
 
     #inv-box {
-        width: 56;
+        width: 60;
         height: auto;
+        max-height: 90vh;
         border: double ansi_bright_yellow;
         padding: 1 2;
         background: black;
@@ -348,6 +349,12 @@ class InventoryScreen(Screen):
         text-align: center;
         text-style: bold;
         color: ansi_bright_yellow;
+        margin-bottom: 0;
+    }
+
+    #inv-count {
+        text-align: center;
+        color: #555555;
         margin-bottom: 1;
     }
 
@@ -356,13 +363,14 @@ class InventoryScreen(Screen):
         margin-bottom: 1;
     }
 
-    .inv-line {
-        color: white;
+    #inv-list {
+        height: auto;
+        max-height: 24;
+        overflow-y: auto;
     }
 
-    .inv-selected {
-        color: ansi_bright_yellow;
-        text-style: bold;
+    .inv-line {
+        color: white;
     }
 
     #inv-actions {
@@ -374,7 +382,7 @@ class InventoryScreen(Screen):
     def __init__(self, player: Player) -> None:
         super().__init__()
         self.player = player
-        self._selected: int | None = None
+        self._selected: int = 0
 
     def _all_items(self) -> list[tuple[Item, bool, str]]:
         """Returns list of (item, is_equipped, slot_label)."""
@@ -388,65 +396,99 @@ class InventoryScreen(Screen):
     def compose(self) -> ComposeResult:
         with Static(id="inv-box"):
             yield Static("Inventory", id="inv-title")
-            yield Static("Press a number to select, then (E)quip/(U)se/(D)rop. Esc to close.", id="inv-hint")
+            yield Static("", id="inv-count")
+            yield Static(
+                "[dim]↑↓[/dim] navigate   "
+                "[bold](E)[/bold]quip/Unequip   "
+                "[bold](U)[/bold]se   "
+                "[bold](D)[/bold]rop   "
+                "[bold](I)[/bold] close",
+                id="inv-hint",
+            )
             yield Static(id="inv-list")
             yield Static("", id="inv-actions")
 
     def on_mount(self) -> None:
+        items = self._all_items()
+        if items:
+            self._selected = 0
         self._refresh_list()
 
     def _refresh_list(self) -> None:
         items = self._all_items()
-        inv_list = self.query_one("#inv-list", Static)
-        actions  = self.query_one("#inv-actions", Static)
+
+        # Clamp selection
+        if items:
+            self._selected = max(0, min(self._selected, len(items) - 1))
+
+        count_widget   = self.query_one("#inv-count",   Static)
+        inv_list       = self.query_one("#inv-list",    Static)
+        actions_widget = self.query_one("#inv-actions", Static)
+
+        count_widget.update(f"[dim]{len(items)} item{'s' if len(items) != 1 else ''}[/dim]")
+
         if not items:
             inv_list.update("[dim](empty)[/dim]")
-            actions.update("")
+            actions_widget.update("")
             return
+
         lines = []
         for i, (item, equipped, slot) in enumerate(items):
-            tag = f"[dim][{slot}][/dim] " if equipped else ""
-            marker = "[bold ansi_bright_yellow]>[/bold ansi_bright_yellow] " if i == self._selected else "  "
-            lines.append(f"{marker}[bold]{i+1}.[/bold] {tag}{item}")
+            slot_tag = f" [dim][{slot}][/dim]" if equipped else ""
+            if i == self._selected:
+                lines.append(
+                    f"[bold ansi_bright_yellow]>[/bold ansi_bright_yellow] "
+                    f"[bold ansi_bright_yellow]{item}{slot_tag}[/bold ansi_bright_yellow]"
+                )
+            else:
+                lines.append(f"  {item}{slot_tag}")
         inv_list.update("\n".join(lines))
-        if self._selected is not None and 0 <= self._selected < len(items):
-            item, equipped, _ = items[self._selected]
-            opts = []
-            if item.equip_slot and not equipped:
-                opts.append("(E)quip")
-            if equipped:
-                opts.append("(U)nequip")
-            if item.kind == ItemKind.POTION:
-                opts.append("(U)se")
-            opts.append("(D)rop")
-            actions.update("  ".join(opts))
-        else:
-            actions.update("")
+
+        item, equipped, slot = items[self._selected]
+        opts = []
+        if item.equip_slot and not equipped:
+            opts.append("[bold](E)[/bold]quip")
+        if equipped:
+            opts.append("[bold](E)[/bold]unequip")
+        if item.kind == ItemKind.POTION:
+            opts.append("[bold](U)[/bold]se")
+        opts.append("[bold](D)[/bold]rop")
+        actions_widget.update("  ".join(opts))
 
     def on_key(self, event) -> None:
         items = self._all_items()
-        if event.key == "escape":
+
+        if event.key in ("escape", "i"):
             self.dismiss(None)
             return
-        if event.character and event.character.isdigit():
-            idx = int(event.character) - 1
-            if 0 <= idx < len(items):
-                self._selected = idx
-                self._refresh_list()
+
+        if not items:
             return
-        if self._selected is None or not (0 <= self._selected < len(items)):
+
+        if event.key in ("up", "k"):
+            self._selected = (self._selected - 1) % len(items)
+            self._refresh_list()
             return
+
+        if event.key in ("down", "j"):
+            self._selected = (self._selected + 1) % len(items)
+            self._refresh_list()
+            return
+
         item, equipped, slot = items[self._selected]
         msg = None
-        if event.key == "e" and item.equip_slot and not equipped:
-            msg, _ = self.player.equip(item)
-        elif event.key == "u" and equipped:
-            msg = self.player.unequip(EquipSlot(slot))
+
+        if event.key == "e":
+            if equipped:
+                msg = self.player.unequip(EquipSlot(slot))
+            elif item.equip_slot:
+                msg, _ = self.player.equip(item)
         elif event.key == "u" and item.kind == ItemKind.POTION:
             msg = self.player.use_potion(item)
         elif event.key == "d":
             msg, _ = self.player.drop(item)
-            self._selected = None
+            self._selected = max(0, self._selected - 1)
+
         if msg:
             self.dismiss(msg)
 
@@ -580,7 +622,6 @@ class GlyphboundApp(App):
         ("pageup",   "scroll_log_up",   "Scroll log up"),
         ("pagedown", "scroll_log_down", "Scroll log down"),
         ("q", "quit",            "Quit"),
-        ("escape", "quit",       "Quit"),
     ]
 
     def compose(self) -> ComposeResult:
