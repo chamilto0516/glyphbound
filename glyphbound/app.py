@@ -84,6 +84,55 @@ class ClassSelectScreen(Screen):
             self.dismiss(char_class)
 
 
+# ── Quit confirmation screen ───────────────────────────────────────────────────
+
+class QuitConfirmScreen(Screen):
+    CSS = """
+    QuitConfirmScreen {
+        background: rgba(0,0,0,0.85);
+        align: center middle;
+    }
+
+    #quit-box {
+        width: 50;
+        height: auto;
+        border: double ansi_bright_red;
+        padding: 1 2;
+        background: black;
+    }
+
+    #quit-title {
+        text-align: center;
+        text-style: bold;
+        color: ansi_bright_red;
+        margin-bottom: 1;
+    }
+
+    #quit-hint {
+        text-align: center;
+        color: white;
+        margin-bottom: 1;
+    }
+
+    #quit-actions {
+        text-align: center;
+        color: #aaaaaa;
+    }
+    """
+
+    def compose(self) -> ComposeResult:
+        with Static(id="quit-box"):
+            yield Static("Quit Game?", id="quit-title")
+            yield Static("Are you sure you want to exit?", id="quit-hint")
+            yield Static("[bold]Y[/bold]es  /  [bold]N[/bold]o (or Esc)", id="quit-actions")
+
+    def on_key(self, event) -> None:
+        if event.key in ("y", "Y"):
+            self.dismiss(True)
+        elif event.key in ("n", "N", "escape"):
+            self.dismiss(False)
+
+
 # ── Name-entry screen ──────────────────────────────────────────────────────────
 
 class NameEntryScreen(Screen):
@@ -632,17 +681,29 @@ class GlyphboundApp(App):
                 self.message_log.add("No monsters in range.")
                 return
             pos, monster = nearest
-            log, killed = apply_spell_to_monster(self.player, spell, monster)
+            log, killed, loot = apply_spell_to_monster(self.player, spell, monster)
             for line in log:
                 self.message_log.add(line)
             if killed:
                 self.dungeon.remove_monster(*pos)
+                # Place loot drops on the ground
+                for item in loot:
+                    self.dungeon.place_item(*pos, item)
         else:
             msg, _ = self.player.cast_spell(spell)
             self.message_log.add(msg)
 
         self.stats_panel.refresh()
         self.map_view.refresh()
+
+    def action_quit(self) -> None:
+        """Show quit confirmation dialog."""
+        self.push_screen(QuitConfirmScreen(), callback=self._quit_confirmed)
+
+    def _quit_confirmed(self, confirmed: bool) -> None:
+        """Handle quit confirmation result."""
+        if confirmed:
+            self.exit()
 
     def _descend(self) -> None:
         sx, sy = self.dungeon.stair_down_pos
