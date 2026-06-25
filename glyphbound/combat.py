@@ -103,6 +103,9 @@ def resolve_combat(player: Player, monster: Monster) -> Tuple[List[str], bool]:
     if monster.hp == 0:
         player.xp += monster.xp_value
         log.append(f"You defeated the {monster.name}! +{monster.xp_value} XP")
+        leveled, level_msgs = player.check_level_up()
+        if leveled:
+            log.extend(level_msgs)
         return log, True
     else:
         log.append(f"You have been slain by the {monster.name}...")
@@ -147,5 +150,8 @@ def apply_spell_to_monster(
     if killed:
         player.xp += monster.xp_value
         log.append(f"  {monster.name} is slain! +{monster.xp_value} XP")
+        leveled, level_msgs = player.check_level_up()
+        if leveled:
+            log.extend(level_msgs)
 
     return log, killed

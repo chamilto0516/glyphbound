@@ -196,6 +196,9 @@ def generate_dungeon(seed: int = None, theme: Theme = None, floor: int = 1, plac
         logger.info("item %s (%s) at %s", elixir.name, elixir.kind.value, (ex, ey))
         item_count += 1
 
+    # Place random loot: potions, gold, weapons in remaining rooms
+    item_count += _place_random_loot(dungeon, rooms, rng, floor)
+
     # Place one of each monster type in separate rooms, spread across the map.
     # Sort candidates by distance from start so goblin lands near start,
     # orc mid-range, troll deep — each picked from its own third of the list.
@@ -373,6 +376,54 @@ def _carve_corridor(tiles: List[List[int]], a: Room, b: Room,
     else:
         _carve_v_tunnel(tiles, ay, by, ax, room_walls)
         _carve_h_tunnel(tiles, ax, bx, by, room_walls)
+
+
+def _place_random_loot(dungeon: Dungeon, rooms: List[Room], rng: random.Random, floor: int) -> int:
+    """Place random loot in rooms. Returns count of items placed."""
+    from .items import (
+        ITEM_HEALTH_POTION, ITEM_MANA_POTION, ITEM_GEM, ITEM_TORCH, ITEM_RUG,
+        ITEM_DAGGER, ITEM_SHORT_SWORD, ITEM_STAFF, ITEM_LEATHER_ARMOR, ITEM_SMALL_SHIELD
+    )
+
+    # Loot pool based on floor difficulty
+    potions = [ITEM_HEALTH_POTION, ITEM_MANA_POTION]
+    treasure = [ITEM_GEM, ITEM_TORCH, ITEM_RUG]
+    weapons = [ITEM_DAGGER, ITEM_SHORT_SWORD, ITEM_STAFF]
+    armor = [ITEM_LEATHER_ARMOR, ITEM_SMALL_SHIELD]
+
+    # Calculate number of loot drops: 2-4 per floor, increasing slightly with depth
+    base_loot = 3
+    floor_bonus = min(floor // 2, 3)  # +1 item every 2 floors, capped at +3
+    loot_count = rng.randint(base_loot, base_loot + 1) + floor_bonus
+
+    # Pick random rooms for loot (skip the first room where player starts)
+    available_rooms = rooms[1:] if len(rooms) > 1 else rooms
+    loot_rooms = rng.sample(available_rooms, min(loot_count, len(available_rooms)))
+
+    placed = 0
+    for room in loot_rooms:
+        # Weighted random selection: potions most common, weapons/armor rarer
+        roll = rng.random()
+        if roll < 0.4:  # 40% potions
+            item = rng.choice(potions)
+        elif roll < 0.65:  # 25% treasure
+            item = rng.choice(treasure)
+        elif roll < 0.85:  # 20% weapons
+            item = rng.choice(weapons)
+        else:  # 15% armor
+            item = rng.choice(armor)
+
+        # Place slightly offset from center to avoid overlap with monsters/stairs
+        cx, cy = room.center
+        dx = rng.choice([-1, 0, 1])
+        dy = rng.choice([-1, 0, 1])
+        loot_x, loot_y = cx + dx, cy + dy
+
+        dungeon.place_item(loot_x, loot_y, item)
+        logger.info("loot %s (%s) at %s", item.name, item.kind.value, (loot_x, loot_y))
+        placed += 1
+
+    return placed
 
 
 def _carve_h_tunnel(tiles: List[List[int]], x1: int, x2: int, y: int,

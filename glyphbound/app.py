@@ -148,11 +148,13 @@ class StatsPanel(Static):
         p = self.player
         if p is None:
             return ""
+        xp_next = p.xp_to_next_level
+        xp_display = f"{p.xp} (next: {xp_next})" if xp_next > 0 else f"{p.xp}"
         lines = [
             f"[bold yellow]{p.name}[/bold yellow] the {p.char_class.value}",
             f"Lv {p.level}   Floor {self.floor_num}   [yellow]{p.gold}gp[/yellow]",
             f"HP: [green]{p.hp:>3}[/green]/{p.max_hp:<3}  ATK:{p.attack:<3} DEF:{p.defense}",
-            f"XP: {p.xp}",
+            f"XP: {xp_display}",
         ]
         if p.has_mp:
             lines.append(f"MP: [cyan]{p.mp:>3}[/cyan]/{p.max_mp}")

@@ -23,6 +23,28 @@ _CLASS_STATS = {
     CharacterClass.CLERIC:  {"hp": 16, "attack": 3, "defense": 3, "mp": 15},
 }
 
+_LEVEL_UP_GAINS = {
+    CharacterClass.WARRIOR: {"hp": 5, "attack": 1, "defense": 1, "mp": 0},
+    CharacterClass.WIZARD:  {"hp": 3, "attack": 0, "defense": 0, "mp": 5},
+    CharacterClass.THIEF:   {"hp": 4, "attack": 1, "defense": 1, "mp": 0},
+    CharacterClass.CLERIC:  {"hp": 4, "attack": 0, "defense": 1, "mp": 3},
+}
+
+def xp_for_level(level: int) -> int:
+    """Return cumulative XP needed to reach the given level."""
+    if level <= 1:
+        return 0
+    if level == 2:
+        return 10
+    if level == 3:
+        return 25
+    total = 25
+    multiplier = 2
+    for lv in range(4, level + 1):
+        total += 25 * multiplier
+        multiplier *= 2
+    return total
+
 
 @dataclass
 class Player:
@@ -163,6 +185,40 @@ class Player:
         if self.mp < self.max_mp:
             self.mp = min(self.max_mp, self.mp + 1)
 
+    # ── Level up ───────────────────────────────────────────────────────────────
+
+    def check_level_up(self) -> Tuple[bool, List[str]]:
+        """
+        Check if player has enough XP to level up. If so, apply stat gains.
+        Returns (did_level_up, log_messages).
+        Can level up multiple times if XP is high enough.
+        """
+        messages = []
+        leveled = False
+        while self.xp >= xp_for_level(self.level + 1):
+            self.level += 1
+            leveled = True
+            gains = _LEVEL_UP_GAINS[self.char_class]
+            self.max_hp += gains["hp"]
+            self.hp += gains["hp"]  # heal by the gain amount
+            self._base_attack += gains["attack"]
+            self._base_defense += gains["defense"]
+            self.max_mp += gains["mp"]
+            self.mp += gains["mp"]  # restore by the gain amount
+            messages.append(f"[bold green]LEVEL UP! You are now level {self.level}![/bold green]")
+            parts = []
+            if gains["hp"]:
+                parts.append(f"+{gains['hp']} HP")
+            if gains["attack"]:
+                parts.append(f"+{gains['attack']} ATK")
+            if gains["defense"]:
+                parts.append(f"+{gains['defense']} DEF")
+            if gains["mp"]:
+                parts.append(f"+{gains['mp']} MP")
+            if parts:
+                messages.append("  " + "  ".join(parts))
+        return leveled, messages
+
     # ── Helpers ────────────────────────────────────────────────────────────────
 
     @property
@@ -171,3 +227,8 @@ class Player:
 
     def equipped_in(self, slot: EquipSlot) -> Optional[Item]:
         return self.equipped.get(slot.value)
+
+    @property
+    def xp_to_next_level(self) -> int:
+        """Return XP needed for next level, or 0 if at max tracked level."""
+        return max(0, xp_for_level(self.level + 1) - self.xp)
