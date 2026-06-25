@@ -6,18 +6,36 @@ from enum import Enum
 from typing import List, Optional
 
 from .items import (
-    Item, ITEM_CLUB, ITEM_SHORT_SWORD, ITEM_BROAD_SWORD,
+    Item,
+    ITEM_CLUB, ITEM_DAGGER, ITEM_SHORT_SWORD, ITEM_BROAD_SWORD,
+    ITEM_MACE, ITEM_LONG_SWORD, ITEM_BATTLE_AXE,
     ITEM_GOLD_PILE_SMALL, ITEM_GOLD_PILE_MEDIUM, ITEM_GOLD_PILE_LARGE,
-    COMMON_WEAPONS, COMMON_ARMOR, POTIONS
+    ITEM_GEM,
+    COMMON_WEAPONS, COMMON_ARMOR, RARE_WEAPONS, RARE_ARMOR,
+    ACCESSORIES, POTIONS, ELIXIRS,
 )
 
 
 class MonsterKind(Enum):
-    GOBLIN   = "Goblin"
-    ORC      = "Orc"
-    TROLL    = "Troll"
-    SKELETON = "Skeleton"
-    ZOMBIE   = "Zombie"
+    # Floor 1+
+    GOBLIN      = "Goblin"
+    SKELETON    = "Skeleton"
+    # Floor 2+
+    ORC         = "Orc"
+    ZOMBIE      = "Zombie"
+    BUGBEAR     = "Bugbear"
+    # Floor 3+
+    TROLL       = "Troll"
+    MUMMY       = "Mummy"
+    WIGHT       = "Wight"
+    # Floor 4+
+    OWLBEAR     = "Owlbear"
+    WRAITH      = "Wraith"
+    # Floor 5+
+    UMBER_HULK  = "Umber Hulk"
+    VAMPIRE     = "Vampire"
+    # Floor 7+
+    DRAGON      = "Dragon"
 
 
 class AIState(Enum):
@@ -36,126 +54,253 @@ class Monster:
     attack: int
     defense: int
     xp_value: int
-    is_undead: bool = False
+    min_floor: int       = 1
+    is_undead: bool      = False
     weapon: Optional[Item] = field(default=None)
 
     # AI state
     ai_state: AIState = AIState.WANDER
     spawn_x: int = 0
     spawn_y: int = 0
-    chase_range: int = 8  # tiles within which monster chases player
-    guard_range: int = 5  # tiles guard monsters stay within from spawn
+    chase_range: int = 8
+    guard_range: int = 5
 
     def drop_loot(self) -> List[Item]:
-        """Generate random loot drops for this monster. Called on death."""
+        """Generate random loot on death."""
         loot: List[Item] = []
+        k = self.kind
 
-        # Guaranteed gold based on monster type
-        if self.kind == MonsterKind.GOBLIN:
+        if k == MonsterKind.GOBLIN:
             loot.append(ITEM_GOLD_PILE_SMALL)
-            # 10% chance for weapon
-            if random.random() < 0.1:
+            if random.random() < 0.10:
                 loot.append(random.choice(COMMON_WEAPONS))
-        elif self.kind == MonsterKind.SKELETON:
+
+        elif k == MonsterKind.SKELETON:
             loot.append(ITEM_GOLD_PILE_SMALL)
-            # 15% chance for weapon or armor
             if random.random() < 0.15:
                 loot.append(random.choice(COMMON_WEAPONS + COMMON_ARMOR))
-        elif self.kind == MonsterKind.ORC:
+
+        elif k == MonsterKind.ORC:
             loot.append(ITEM_GOLD_PILE_MEDIUM)
-            # 20% chance for weapon, 10% for potion
-            if random.random() < 0.2:
+            if random.random() < 0.20:
                 loot.append(random.choice(COMMON_WEAPONS))
-            if random.random() < 0.1:
+            if random.random() < 0.10:
                 loot.append(random.choice(POTIONS))
-        elif self.kind == MonsterKind.ZOMBIE:
+
+        elif k == MonsterKind.ZOMBIE:
             loot.append(ITEM_GOLD_PILE_SMALL)
-            # 20% chance for potion (corpse had one)
-            if random.random() < 0.2:
+            if random.random() < 0.20:
                 loot.append(random.choice(POTIONS))
-        elif self.kind == MonsterKind.TROLL:
+
+        elif k == MonsterKind.BUGBEAR:
+            loot.append(ITEM_GOLD_PILE_MEDIUM)
+            if random.random() < 0.25:
+                loot.append(random.choice(COMMON_WEAPONS + COMMON_ARMOR))
+            if random.random() < 0.10:
+                loot.append(random.choice(POTIONS))
+
+        elif k == MonsterKind.TROLL:
             loot.append(ITEM_GOLD_PILE_LARGE)
-            # 30% chance for weapon, 20% for armor
-            if random.random() < 0.3:
+            if random.random() < 0.30:
                 loot.append(random.choice(COMMON_WEAPONS))
-            if random.random() < 0.2:
+            if random.random() < 0.20:
                 loot.append(random.choice(COMMON_ARMOR))
+
+        elif k == MonsterKind.MUMMY:
+            loot.append(ITEM_GOLD_PILE_MEDIUM)
+            loot.append(ITEM_GEM)
+            if random.random() < 0.20:
+                loot.append(random.choice(POTIONS))
+
+        elif k == MonsterKind.WIGHT:
+            loot.append(ITEM_GOLD_PILE_MEDIUM)
+            if random.random() < 0.25:
+                loot.append(random.choice(COMMON_WEAPONS + RARE_ARMOR))
+
+        elif k == MonsterKind.OWLBEAR:
+            loot.append(ITEM_GOLD_PILE_LARGE)
+            if random.random() < 0.30:
+                loot.append(random.choice(RARE_WEAPONS))
+
+        elif k == MonsterKind.WRAITH:
+            # Wraiths carry cursed riches — gem + chance at accessory
+            loot.append(ITEM_GEM)
+            if random.random() < 0.25:
+                loot.append(random.choice(ACCESSORIES))
+
+        elif k == MonsterKind.UMBER_HULK:
+            loot.append(ITEM_GOLD_PILE_LARGE)
+            if random.random() < 0.35:
+                loot.append(random.choice(RARE_WEAPONS + RARE_ARMOR))
+            if random.random() < 0.15:
+                loot.append(random.choice(POTIONS))
+
+        elif k == MonsterKind.VAMPIRE:
+            loot.append(ITEM_GEM)
+            loot.append(ITEM_GOLD_PILE_LARGE)
+            if random.random() < 0.40:
+                loot.append(random.choice(ACCESSORIES))
+            if random.random() < 0.25:
+                loot.append(random.choice(RARE_WEAPONS))
+
+        elif k == MonsterKind.DRAGON:
+            # Dragon hoard: guaranteed large gold + gem + rare item
+            loot.append(ITEM_GOLD_PILE_LARGE)
+            loot.append(ITEM_GOLD_PILE_LARGE)
+            loot.append(ITEM_GEM)
+            loot.append(random.choice(RARE_WEAPONS + RARE_ARMOR))
+            if random.random() < 0.50:
+                loot.append(random.choice(ACCESSORIES))
+            if random.random() < 0.30:
+                loot.append(random.choice(ELIXIRS))
 
         return loot
 
 
+# ── Floor 1+ ───────────────────────────────────────────────────────────────────
+
 def spawn_goblin() -> Monster:
     return Monster(
-        kind=MonsterKind.GOBLIN,
-        name="Goblin",
-        glyph="g",
-        hp=5, max_hp=5,
-        attack=1, defense=1,
-        xp_value=1,
-        weapon=ITEM_CLUB,
-        ai_state=AIState.WANDER,
-        chase_range=10,  # goblins are aggressive, chase from far
-    )
-
-
-def spawn_orc() -> Monster:
-    return Monster(
-        kind=MonsterKind.ORC,
-        name="Orc",
-        glyph="o",
-        hp=12, max_hp=12,
-        attack=3, defense=2,
-        xp_value=3,
-        weapon=ITEM_SHORT_SWORD,
-        ai_state=AIState.WANDER,
-        chase_range=8,
-    )
-
-
-def spawn_troll() -> Monster:
-    return Monster(
-        kind=MonsterKind.TROLL,
-        name="Troll",
-        glyph="T",
-        hp=20, max_hp=20,
-        attack=5, defense=3,
-        xp_value=6,
-        weapon=ITEM_BROAD_SWORD,
-        ai_state=AIState.GUARD,  # trolls guard their territory
-        chase_range=6,
-        guard_range=8,
+        kind=MonsterKind.GOBLIN, name="Goblin", glyph="g",
+        hp=5, max_hp=5, attack=1, defense=1, xp_value=1,
+        min_floor=1, weapon=ITEM_CLUB,
+        ai_state=AIState.WANDER, chase_range=10,
     )
 
 
 def spawn_skeleton() -> Monster:
     return Monster(
-        kind=MonsterKind.SKELETON,
-        name="Skeleton",
-        glyph="s",
-        hp=8, max_hp=8,
-        attack=2, defense=1,
-        xp_value=2,
-        is_undead=True,
-        weapon=ITEM_SHORT_SWORD,
-        ai_state=AIState.WANDER,
-        chase_range=7,
+        kind=MonsterKind.SKELETON, name="Skeleton", glyph="s",
+        hp=8, max_hp=8, attack=2, defense=1, xp_value=2,
+        min_floor=1, is_undead=True, weapon=ITEM_SHORT_SWORD,
+        ai_state=AIState.WANDER, chase_range=7,
+    )
+
+
+# ── Floor 2+ ───────────────────────────────────────────────────────────────────
+
+def spawn_orc() -> Monster:
+    return Monster(
+        kind=MonsterKind.ORC, name="Orc", glyph="o",
+        hp=12, max_hp=12, attack=3, defense=2, xp_value=3,
+        min_floor=2, weapon=ITEM_SHORT_SWORD,
+        ai_state=AIState.WANDER, chase_range=8,
     )
 
 
 def spawn_zombie() -> Monster:
     return Monster(
-        kind=MonsterKind.ZOMBIE,
-        name="Zombie",
-        glyph="z",
-        hp=15, max_hp=15,
-        attack=4, defense=2,
-        xp_value=4,
-        is_undead=True,
-        weapon=ITEM_CLUB,
-        ai_state=AIState.WANDER,
-        chase_range=5,  # zombies are slow, won't chase far
+        kind=MonsterKind.ZOMBIE, name="Zombie", glyph="z",
+        hp=15, max_hp=15, attack=4, defense=2, xp_value=4,
+        min_floor=2, is_undead=True, weapon=ITEM_CLUB,
+        ai_state=AIState.WANDER, chase_range=5,
     )
 
 
-# Ordered weakest→strongest; used by the dungeon placer.
-ALL_SPAWNERS = [spawn_goblin, spawn_skeleton, spawn_orc, spawn_zombie, spawn_troll]
+def spawn_bugbear() -> Monster:
+    return Monster(
+        kind=MonsterKind.BUGBEAR, name="Bugbear", glyph="b",
+        hp=18, max_hp=18, attack=4, defense=2, xp_value=5,
+        min_floor=2, weapon=ITEM_MACE,
+        ai_state=AIState.WANDER, chase_range=9,
+    )
+
+
+# ── Floor 3+ ───────────────────────────────────────────────────────────────────
+
+def spawn_troll() -> Monster:
+    return Monster(
+        kind=MonsterKind.TROLL, name="Troll", glyph="T",
+        hp=25, max_hp=25, attack=5, defense=3, xp_value=7,
+        min_floor=3, weapon=ITEM_BROAD_SWORD,
+        ai_state=AIState.GUARD, chase_range=6, guard_range=8,
+    )
+
+
+def spawn_mummy() -> Monster:
+    return Monster(
+        kind=MonsterKind.MUMMY, name="Mummy", glyph="M",
+        hp=20, max_hp=20, attack=5, defense=4, xp_value=8,
+        min_floor=3, is_undead=True, weapon=None,
+        ai_state=AIState.WANDER, chase_range=6,
+    )
+
+
+def spawn_wight() -> Monster:
+    return Monster(
+        kind=MonsterKind.WIGHT, name="Wight", glyph="W",
+        hp=18, max_hp=18, attack=6, defense=3, xp_value=9,
+        min_floor=3, is_undead=True, weapon=ITEM_LONG_SWORD,
+        ai_state=AIState.WANDER, chase_range=8,
+    )
+
+
+# ── Floor 4+ ───────────────────────────────────────────────────────────────────
+
+def spawn_owlbear() -> Monster:
+    return Monster(
+        kind=MonsterKind.OWLBEAR, name="Owlbear", glyph="O",
+        hp=30, max_hp=30, attack=7, defense=4, xp_value=12,
+        min_floor=4, weapon=None,  # attacks with claws/beak
+        ai_state=AIState.GUARD, chase_range=7, guard_range=6,
+    )
+
+
+def spawn_wraith() -> Monster:
+    return Monster(
+        kind=MonsterKind.WRAITH, name="Wraith", glyph="\"",
+        hp=22, max_hp=22, attack=7, defense=5, xp_value=14,
+        min_floor=4, is_undead=True, weapon=None,
+        ai_state=AIState.WANDER, chase_range=10,
+    )
+
+
+# ── Floor 5+ ───────────────────────────────────────────────────────────────────
+
+def spawn_umber_hulk() -> Monster:
+    return Monster(
+        kind=MonsterKind.UMBER_HULK, name="Umber Hulk", glyph="U",
+        hp=40, max_hp=40, attack=8, defense=5, xp_value=18,
+        min_floor=5, weapon=None,  # massive claws
+        ai_state=AIState.GUARD, chase_range=7, guard_range=6,
+    )
+
+
+def spawn_vampire() -> Monster:
+    return Monster(
+        kind=MonsterKind.VAMPIRE, name="Vampire", glyph="V",
+        hp=35, max_hp=35, attack=9, defense=6, xp_value=22,
+        min_floor=5, is_undead=True, weapon=None,
+        ai_state=AIState.WANDER, chase_range=12,
+    )
+
+
+# ── Floor 7+ ───────────────────────────────────────────────────────────────────
+
+def spawn_dragon() -> Monster:
+    return Monster(
+        kind=MonsterKind.DRAGON, name="Dragon", glyph="D",
+        hp=60, max_hp=60, attack=12, defense=8, xp_value=50,
+        min_floor=7, weapon=None,  # claws and fire breath flavour
+        ai_state=AIState.GUARD, chase_range=10, guard_range=10,
+    )
+
+
+# ── Spawn table ────────────────────────────────────────────────────────────────
+# Ordered weakest→strongest. Dungeon placer filters by min_floor.
+
+ALL_SPAWNERS = [
+    spawn_goblin,       # floor 1+
+    spawn_skeleton,     # floor 1+
+    spawn_orc,          # floor 2+
+    spawn_zombie,       # floor 2+
+    spawn_bugbear,      # floor 2+
+    spawn_troll,        # floor 3+
+    spawn_mummy,        # floor 3+
+    spawn_wight,        # floor 3+
+    spawn_owlbear,      # floor 4+
+    spawn_wraith,       # floor 4+
+    spawn_umber_hulk,   # floor 5+
+    spawn_vampire,      # floor 5+
+    spawn_dragon,       # floor 7+
+]

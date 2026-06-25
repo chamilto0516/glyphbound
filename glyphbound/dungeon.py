@@ -210,44 +210,47 @@ def generate_dungeon(seed: int = None, theme: Theme = None, floor: int = 1, plac
     # Place random loot: potions, gold, weapons in remaining rooms
     item_count += _place_random_loot(dungeon, rooms, rng, floor)
 
-    # Place one of each monster type in separate rooms, spread across the map.
-    # Sort candidates by distance from start so goblin lands near start,
-    # orc mid-range, troll deep — each picked from its own third of the list.
+    # Place monsters: filter eligible spawners by floor, scale count with depth.
     from .monsters import ALL_SPAWNERS
+    eligible = [s for s in ALL_SPAWNERS if s().min_floor <= floor]
+
+    # Monster count: 3 on floor 1, +1 every floor, capped at 12
+    target_monsters = min(3 + (floor - 1), 12)
+
     candidate_rooms = [
         r for r in rooms[1:]
         if r.center != (dx, dy)
     ]
+    # Sort near→far so weaker monsters naturally land closer to start
     candidate_rooms.sort(
         key=lambda r: abs(r.center[0] - start_cx) + abs(r.center[1] - start_cy)
     )
-    n = len(candidate_rooms)
     monster_count = 0
-    if n >= len(ALL_SPAWNERS):
-        third = max(1, n // len(ALL_SPAWNERS))
-        for i, spawner in enumerate(ALL_SPAWNERS):
-            zone_start = i * third
-            zone_end   = zone_start + third if i < len(ALL_SPAWNERS) - 1 else n
-            zone       = candidate_rooms[zone_start:zone_end]
-            room       = rng.choice(zone)
-            mx, my     = room.center
-            m = spawner()
-            m.spawn_x, m.spawn_y = mx, my  # set spawn location for AI
-            dungeon.place_monster(mx, my, m)
-            logger.info("monster %s '%s' hp%d atk%d def%d xp%d at %s",
-                        m.name, m.glyph, m.hp, m.attack, m.defense, m.xp_value, (mx, my))
-            monster_count += 1
-    else:
-        # fewer rooms than monster types — place what we can in distinct rooms
-        rng.shuffle(candidate_rooms)
-        for i, spawner in enumerate(ALL_SPAWNERS[:n]):
-            mx, my = candidate_rooms[i].center
-            m = spawner()
-            m.spawn_x, m.spawn_y = mx, my  # set spawn location for AI
-            dungeon.place_monster(mx, my, m)
-            logger.info("monster %s '%s' hp%d atk%d def%d xp%d at %s",
-                        m.name, m.glyph, m.hp, m.attack, m.defense, m.xp_value, (mx, my))
-            monster_count += 1
+    used_rooms: set = set()
+    for _ in range(target_monsters):
+        if not candidate_rooms:
+            break
+        # Pick a spawner weighted toward the stronger end as floors deepen
+        if len(eligible) == 1:
+            spawner = eligible[0]
+        else:
+            # Weight: monsters in the top half of the eligible list get 3x weight on deeper floors
+            mid = len(eligible) // 2
+            weights = [1] * mid + [1 + (floor // 2)] * (len(eligible) - mid)
+            spawner = rng.choices(eligible, weights=weights, k=1)[0]
+
+        # Prefer an unused room; fall back to any if all used
+        unused = [r for r in candidate_rooms if id(r) not in used_rooms]
+        room = rng.choice(unused if unused else candidate_rooms)
+        used_rooms.add(id(room))
+
+        mx, my = room.center
+        m = spawner()
+        m.spawn_x, m.spawn_y = mx, my
+        dungeon.place_monster(mx, my, m)
+        logger.info("monster %s '%s' hp%d atk%d def%d xp%d at %s",
+                    m.name, m.glyph, m.hp, m.attack, m.defense, m.xp_value, (mx, my))
+        monster_count += 1
 
     logger.info("Floor %d complete: %d rooms, %d branches, %d items, %d monsters",
                 floor, len(rooms), len(dungeon.branch_rooms), item_count, monster_count)
