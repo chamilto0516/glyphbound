@@ -48,9 +48,18 @@ def execute_player_attack(player: Player, monster: Monster) -> List[str]:
         p_roll = random.randint(1, 6) + player.attack
         if _attacker_hits(p_roll, monster.defense):
             dmg = roll_damage(player_weapon)
-            monster.hp = max(0, monster.hp - dmg)
             wpn_name = player_weapon.name if player_weapon else "fists"
-            log.append(f"  Your {wpn_name} hits for {dmg}! {monster.name} HP: {monster.hp}/{monster.max_hp}")
+            backstab = (
+                player.char_class == CharacterClass.THIEF
+                and random.random() < player.level * 0.10
+            )
+            if backstab:
+                dmg *= 2
+                monster.hp = max(0, monster.hp - dmg)
+                log.append(f"  [bold yellow]BACKSTAB![/bold yellow] Your {wpn_name} strikes a vital spot for {dmg}! {monster.name} HP: {monster.hp}/{monster.max_hp}")
+            else:
+                monster.hp = max(0, monster.hp - dmg)
+                log.append(f"  Your {wpn_name} hits for {dmg}! {monster.name} HP: {monster.hp}/{monster.max_hp}")
         else:
             log.append(f"  Your attack misses the {monster.name}.")
     return log
@@ -72,9 +81,14 @@ def execute_monster_attack(player: Player, monster: Monster) -> List[str]:
 
 
 def execute_flee_attempt(player: Player, monster: Monster) -> Tuple[List[str], bool]:
-    """50% flee chance. On failure, monster gets a free attack. Returns (log, succeeded)."""
+    """Flee attempt. Thief: min 50% + 5%/level (cap 100%). Others: 25%. On failure, monster attacks."""
+    from .player import CharacterClass
     log: List[str] = []
-    if random.random() < 0.5:
+    if player.char_class == CharacterClass.THIEF:
+        chance = min(0.50 + player.level * 0.05, 1.0)
+    else:
+        chance = 0.25
+    if random.random() < chance:
         log.append(f"You flee from the {monster.name}!")
         return log, True
     log.append(f"You try to flee but {monster.name} blocks your way!")
