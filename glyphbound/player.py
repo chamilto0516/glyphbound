@@ -221,7 +221,7 @@ class Player:
         if spell.effect == SpellEffect.TURN_UNDEAD:
             return f"You invoke {spell.name}!", 0
         if spell.effect == SpellEffect.DETECT:
-            return f"You cast {spell.name}. (Detection not yet implemented.)", 0
+            return f"You cast {spell.name}.", -1  # -1 signals caller to run detect sweep
         if spell.effect == SpellEffect.BLINK:
             return f"You cast {spell.name}. (Blink not yet implemented.)", 0
         return f"Cast {spell.name}.", 0
@@ -280,6 +280,20 @@ class Player:
         return leveled, messages
 
     # ── Helpers ────────────────────────────────────────────────────────────────
+
+    @property
+    def trap_detect_chance(self) -> float:
+        """Thief only: cumulative 10% per level chance to detect traps (max 100%)."""
+        if self.char_class != CharacterClass.THIEF:
+            return 0.0
+        return min(self.level * 0.10, 1.0)
+
+    @property
+    def trap_disarm_chance(self) -> float:
+        """Thief only: cumulative 10% per level chance to disarm a detected trap."""
+        if self.char_class != CharacterClass.THIEF:
+            return 0.0
+        return min(self.level * 0.10, 1.0)
 
     @property
     def has_mp(self) -> bool:

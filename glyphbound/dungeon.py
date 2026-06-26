@@ -9,6 +9,7 @@ if TYPE_CHECKING:
     from .themes import Theme
     from .items import Item
     from .monsters import Monster
+    from .traps import Trap
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +60,7 @@ class Dungeon:
     stair_up_pos: Optional[Tuple[int, int]] = None
     items: Dict[Tuple[int, int], List["Item"]] = field(default_factory=dict)
     monsters: Dict[Tuple[int, int], "Monster"] = field(default_factory=dict)
+    traps: Dict[Tuple[int, int], "Trap"] = field(default_factory=dict)
 
     def tile_at(self, x: int, y: int) -> int:
         if 0 <= x < self.width and 0 <= y < self.height:
@@ -89,6 +91,15 @@ class Dungeon:
 
     def remove_monster(self, x: int, y: int) -> None:
         self.monsters.pop((x, y), None)
+
+    def place_trap(self, x: int, y: int, trap: "Trap") -> None:
+        self.traps[(x, y)] = trap
+
+    def trap_at(self, x: int, y: int) -> "Trap | None":
+        return self.traps.get((x, y))
+
+    def remove_trap(self, x: int, y: int) -> None:
+        self.traps.pop((x, y), None)
 
     def move_monster(self, old_x: int, old_y: int, new_x: int, new_y: int) -> bool:
         """Move a monster from (old_x, old_y) to (new_x, new_y). Returns True if moved."""
@@ -252,8 +263,26 @@ def generate_dungeon(seed: int = None, theme: Theme = None, floor: int = 1, plac
                     m.name, m.glyph, m.hp, m.attack, m.defense, m.xp_value, (mx, my))
         monster_count += 1
 
-    logger.info("Floor %d complete: %d rooms, %d branches, %d items, %d monsters",
-                floor, len(rooms), len(dungeon.branch_rooms), item_count, monster_count)
+    # Place traps: 2–5 traps per floor, scattered across non-start rooms
+    from .traps import TRAP_MAKERS
+    trap_count = rng.randint(2, 5)
+    trap_candidates = rooms[1:] if len(rooms) > 1 else rooms
+    trap_rooms = rng.sample(trap_candidates, min(trap_count, len(trap_candidates)))
+    placed_traps = 0
+    for room in trap_rooms:
+        maker = rng.choice(TRAP_MAKERS)
+        trap = maker()
+        tx = rng.randint(room.x + 1, room.x + room.w - 2)
+        ty = rng.randint(room.y + 1, room.y + room.h - 2)
+        # Don't place on top of stairs or another trap
+        if (tx, ty) != dungeon.stair_down_pos and (tx, ty) != dungeon.stair_up_pos \
+                and not dungeon.trap_at(tx, ty):
+            dungeon.place_trap(tx, ty, trap)
+            placed_traps += 1
+            logger.info("trap %s at %s", trap.name, (tx, ty))
+
+    logger.info("Floor %d complete: %d rooms, %d branches, %d items, %d monsters, %d traps",
+                floor, len(rooms), len(dungeon.branch_rooms), item_count, monster_count, placed_traps)
 
     return dungeon
 

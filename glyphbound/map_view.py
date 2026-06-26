@@ -36,11 +36,15 @@ class MapView(Widget):
                 if monster:
                     segments.append(Segment(monster.glyph, RichStyle(color="bright_red", bold=True)))
                 else:
-                    floor_items = dungeon.items_at(mx, my)
-                    if floor_items:
-                        segments.append(Segment(floor_items[-1].glyph, RichStyle(color="bright_cyan", bold=True)))
+                    trap = dungeon.trap_at(mx, my)
+                    if trap and trap.is_detected:
+                        segments.append(Segment("T", RichStyle(color="red", bold=True)))
                     else:
-                        tile = dungeon.tile_at(mx, my)
-                        segments.append(Segment(theme.glyphs[tile], theme.tile_styles[tile]))
+                        floor_items = dungeon.items_at(mx, my)
+                        if floor_items:
+                            segments.append(Segment(floor_items[-1].glyph, RichStyle(color="bright_cyan", bold=True)))
+                        else:
+                            tile = dungeon.tile_at(mx, my)
+                            segments.append(Segment(theme.glyphs[tile], theme.tile_styles[tile]))
 
         return Strip(segments, width)

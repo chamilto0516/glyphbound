@@ -11,11 +11,12 @@ import re
 
 from .combat import apply_spell_to_monster
 from .combat_screen import CombatResult, CombatScreen
-from .dungeon import STAIR_DOWN, STAIR_UP, generate_dungeon
+from .dungeon import DOOR_CLOSED, STAIR_DOWN, STAIR_UP, generate_dungeon
 from .items import EquipSlot, Item, ItemKind
 from .map_view import MapView
 from .player import CharacterClass, Player
 from .spells import Spell, SpellEffect
+from .traps import Trap
 
 
 # ── Class-select screen ────────────────────────────────────────────────────────
@@ -153,7 +154,7 @@ class DeathScreen(Screen):
             yield Static(f"  Damage taken       {p.stat_damage_taken}",               classes="stat-row")
             yield Static(f"  Items found        {p.stat_items_found}",                classes="stat-row")
             yield Static(f"  MP spent           {p.stat_mp_spent}",                   classes="stat-row")
-            yield Static("[dim]────────────────────────────────────────────────────[/dim]", id="death-sep")
+            yield Static("[dim]────────────────────────────────────────────────────[/dim]", id="death-sep2")
             yield Static("Press Q to quit  or  R to restart", id="death-hint")
 
     def on_key(self, event) -> None:
@@ -619,6 +620,7 @@ class GlyphboundApp(App):
         ("g", "get_item",        "Get item"),
         ("i", "inventory",       "Inventory"),
         ("z", "spells",          "Spells"),
+        ("x", "disarm_trap",     "Disarm trap"),
         ("pageup",   "scroll_log_up",   "Scroll log up"),
         ("pagedown", "scroll_log_down", "Scroll log down"),
         ("q", "quit",            "Quit"),
@@ -681,6 +683,10 @@ class GlyphboundApp(App):
             )
             return
 
+        # Check if player is about to open a door (tile at dest is DOOR_CLOSED)
+        dest_tile = self.dungeon.tile_at(nx, ny)
+        opening_door = dest_tile == DOOR_CLOSED
+
         moved = self.dungeon.move_party(dx, dy)
         if not moved:
             return  # blocked by wall
@@ -688,12 +694,23 @@ class GlyphboundApp(App):
         self.player.on_move()
         self.stats_panel.refresh()
         x, y = self.dungeon.party_x, self.dungeon.party_y
+
+        # Thief door-open trap detection scan
+        if opening_door and self.player.char_class == CharacterClass.THIEF:
+            self._thief_detect_traps()
+
         tile = self.dungeon.tile_at(x, y)
         if tile == STAIR_DOWN:
             self._descend()
         elif tile == STAIR_UP:
             self._ascend()
         else:
+            # Check for trap trigger on landing tile
+            trap = self.dungeon.trap_at(x, y)
+            if trap:
+                self._trigger_trap(x, y, trap)
+                if self.player.hp == 0:
+                    return
             # After player moves, run monster AI turns
             self._monster_turns()
             self.map_view.refresh()
@@ -701,6 +718,88 @@ class GlyphboundApp(App):
             if items:
                 names = ", ".join(i.name for i in items)
                 self.message_log.add(f"You see here: {names}. (G to pick up)")
+
+    def _detect_magic_traps(self) -> None:
+        """Detect Magic reveals all Flame Ward traps on the current floor."""
+        found = []
+        for (tx, ty), trap in self.dungeon.traps.items():
+            if trap.is_magic and not trap.is_detected:
+                trap.is_detected = True
+                found.append(trap.name)
+        if found:
+            self.message_log.add(
+                f"[bold cyan]Detect Magic reveals {len(found)} magical trap(s) on this floor![/bold cyan]"
+            )
+            self.map_view.refresh()
+        else:
+            self.message_log.add("Detect Magic finds no magical traps here.")
+
+    def _thief_detect_traps(self) -> None:
+        """Thief scans for traps within 20 Manhattan distance when opening a door."""
+        import random as _rng
+        chance = self.player.trap_detect_chance
+        if chance <= 0:
+            return
+        px, py = self.dungeon.party_x, self.dungeon.party_y
+        found = []
+        for (tx, ty), trap in self.dungeon.traps.items():
+            if trap.is_detected:
+                continue
+            dist = abs(tx - px) + abs(ty - py)
+            if dist <= 20 and _rng.random() < chance:
+                trap.is_detected = True
+                found.append(trap.name)
+        if found:
+            names = ", ".join(found)
+            self.message_log.add(
+                f"[bold red]Your thief senses tingle — you detect: {names}![/bold red]"
+            )
+        else:
+            self.message_log.add("You check for traps but find nothing.")
+
+    def _trigger_trap(self, x: int, y: int, trap: Trap) -> None:
+        """Player steps on a trap tile — deal damage and remove the trap."""
+        dmg, msg = trap.trigger()
+        self.player.hp = max(0, self.player.hp - dmg)
+        self.player.stat_damage_taken += dmg
+        self.dungeon.remove_trap(x, y)
+        self.message_log.add(msg)
+        self.stats_panel.refresh()
+        self.map_view.refresh()
+        if self.player.hp == 0:
+            self._player_died()
+
+    def action_disarm_trap(self) -> None:
+        """Thief disarms a trap on current or adjacent tile."""
+        if not self.player:
+            return
+        if self.player.char_class != CharacterClass.THIEF:
+            self.message_log.add("Only a Thief can disarm traps.")
+            return
+        px, py = self.dungeon.party_x, self.dungeon.party_y
+        # Look for a detected trap on current tile or orthogonal neighbors
+        target_pos = None
+        target_trap = None
+        for dx, dy in ((0, 0), (0, -1), (0, 1), (-1, 0), (1, 0)):
+            trap = self.dungeon.trap_at(px + dx, py + dy)
+            if trap and trap.is_detected:
+                target_pos = (px + dx, py + dy)
+                target_trap = trap
+                break
+        if target_trap is None:
+            self.message_log.add("No detected trap nearby to disarm.")
+            return
+        import random as _rng
+        if _rng.random() < self.player.trap_disarm_chance:
+            self.dungeon.remove_trap(*target_pos)
+            self.message_log.add(
+                f"[bold green]You disarm the {target_trap.name}![/bold green]"
+            )
+            self.map_view.refresh()
+        else:
+            self.message_log.add(
+                f"You fail to disarm the {target_trap.name}!"
+            )
 
     def _monster_turns(self) -> None:
         """Execute AI turn for each monster on the map."""
@@ -823,8 +922,10 @@ class GlyphboundApp(App):
                 for item in loot:
                     self.dungeon.place_item(*pos, item)
         else:
-            msg, _ = self.player.cast_spell(spell)
+            msg, sentinel = self.player.cast_spell(spell)
             self.message_log.add(msg)
+            if sentinel == -1:
+                self._detect_magic_traps()
 
         self.stats_panel.refresh()
         self.map_view.refresh()
