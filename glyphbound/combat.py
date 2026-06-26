@@ -74,6 +74,12 @@ def execute_player_attack(player: Player, monster: Monster) -> List[str]:
 def execute_monster_attack(player: Player, monster: Monster) -> List[str]:
     """Execute one monster attack round. Mutates player.hp. Returns log lines."""
     log: List[str] = []
+    # Invulnerability blocks all damage; decrement counter
+    if player.invuln_active:
+        player.invuln_turns_remaining -= 1
+        fade = " [dim](Invulnerability fades)[/dim]" if not player.invuln_active else ""
+        log.append(f"  {monster.name} attacks — but you are invulnerable!{fade}")
+        return log
     m_roll = random.randint(1, 6) + monster.attack
     if _attacker_hits(m_roll, player.defense):
         dmg = roll_damage(monster.weapon)
@@ -127,6 +133,7 @@ def resolve_combat(player: Player, monster: Monster) -> Tuple[List[str], bool, L
 
     player.temp_defense_bonus = 0  # buffs expire after each combat
     player.temp_attack_bonus = 0
+    player.invuln_turns_remaining = 0
 
     loot: List[Item] = []
     if monster.hp == 0:

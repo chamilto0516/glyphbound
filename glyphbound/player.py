@@ -78,6 +78,7 @@ class Player:
     temp_attack_bonus: int            = 0   # cleared after each combat
     rage_turns_remaining: int         = 0   # counts down each attack while raging
     rage_used_this_floor: bool        = False  # once per floor
+    invuln_turns_remaining: int       = 0   # rounds remaining of scroll invulnerability
 
     def __post_init__(self) -> None:
         stats = _CLASS_STATS[self.char_class]
@@ -284,6 +285,34 @@ class Player:
         return leveled, messages
 
     # ── Helpers ────────────────────────────────────────────────────────────────
+
+    @property
+    def invuln_active(self) -> bool:
+        return self.invuln_turns_remaining > 0
+
+    def use_scroll(self, item: "Item") -> Tuple[str, int]:
+        """
+        Use a scroll from inventory. Returns (message, fireball_damage).
+        fireball_damage > 0 only for Scroll of Fireball — caller applies to monster.
+        Consumes the scroll.
+        """
+        from .items import ItemKind
+        if item.kind != ItemKind.SCROLL:
+            return f"{item.name} is not a scroll.", 0
+        if item not in self.inventory:
+            return "You don't have that.", 0
+        self.inventory.remove(item)
+        if item.invuln_turns:
+            self.invuln_turns_remaining += item.invuln_turns
+            return f"You read {item.name}! Invulnerable for {item.invuln_turns} rounds!", 0
+        if item.hp_bonus:
+            healed = min(item.hp_bonus, self.max_hp - self.hp)
+            self.hp += healed
+            return f"You read {item.name}! +{healed} HP restored. (HP: {self.hp}/{self.max_hp})", 0
+        if item.damage_count and item.damage_sides:
+            dmg = sum(random.randint(1, item.damage_sides) for _ in range(item.damage_count))
+            return f"You read {item.name}! A bolt of fire erupts for {dmg} damage!", dmg
+        return f"You read {item.name}. Nothing happens.", 0
 
     @property
     def rage_active(self) -> bool:

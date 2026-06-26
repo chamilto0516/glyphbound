@@ -36,6 +36,7 @@ class Item:
     damage_count: int   = 1   # number of dice, or static value when sides=0
     is_unique: bool     = False  # named/special items
     warrior_only: bool  = False  # requires Warrior class to equip
+    invuln_turns: int   = 0     # scrolls: rounds of invulnerability granted
 
     def __str__(self) -> str:
         parts = [self.name]
@@ -245,18 +246,20 @@ ITEM_RUG = Item(
 )
 
 # ── Scrolls ────────────────────────────────────────────────────────────────────
-# Note: Scroll effects not yet implemented; these are placeholders
 ITEM_SCROLL_FIREBALL = Item(
     name="Scroll of Fireball", kind=ItemKind.SCROLL, glyph="?",
     gold_value=40,
+    damage_sides=6, damage_count=3,   # 3d6 fire damage
 )
 ITEM_SCROLL_HEAL = Item(
     name="Scroll of Heal", kind=ItemKind.SCROLL, glyph="?",
     gold_value=30,
+    hp_bonus=20,                      # restore 20 HP
 )
-ITEM_SCROLL_TELEPORT = Item(
-    name="Scroll of Teleport", kind=ItemKind.SCROLL, glyph="?",
-    gold_value=50,
+ITEM_SCROLL_INVULNERABILITY = Item(
+    name="Scroll of Invulnerability", kind=ItemKind.SCROLL, glyph="?",
+    gold_value=60,
+    invuln_turns=3,                   # immune to attacks for 3 rounds
 )
 
 # ── Loot Pools ─────────────────────────────────────────────────────────────────
@@ -280,4 +283,4 @@ ELIXIRS = [ITEM_ELIXIR_VITALITY, ITEM_ELIXIR_CLARITY]
 TREASURE = [ITEM_GEM, ITEM_TORCH, ITEM_RUG]
 GOLD = [ITEM_GOLD_PILE_SMALL, ITEM_GOLD_PILE_MEDIUM, ITEM_GOLD_PILE_LARGE]
 
-SCROLLS = [ITEM_SCROLL_FIREBALL, ITEM_SCROLL_HEAL, ITEM_SCROLL_TELEPORT]
+SCROLLS = [ITEM_SCROLL_FIREBALL, ITEM_SCROLL_HEAL, ITEM_SCROLL_INVULNERABILITY]

@@ -92,6 +92,69 @@ class PotionSelectScreen(Screen):
                 self.dismiss(potions[idx])
 
 
+# ── Scroll-select screen ──────────────────────────────────────────────────────
+
+class ScrollSelectScreen(Screen):
+    CSS = """
+    ScrollSelectScreen {
+        background: rgba(0,0,0,0.85);
+        align: center middle;
+    }
+
+    #scr-box {
+        width: 44;
+        height: auto;
+        border: double ansi_bright_cyan;
+        padding: 1 2;
+        background: black;
+    }
+
+    #scr-title {
+        text-align: center;
+        text-style: bold;
+        color: ansi_bright_cyan;
+        margin-bottom: 1;
+    }
+
+    #scr-hint {
+        color: #888888;
+        margin-top: 1;
+    }
+
+    .scr-line {
+        color: white;
+    }
+    """
+
+    def __init__(self, player: Player) -> None:
+        super().__init__()
+        self.player = player
+
+    def _scrolls(self) -> List[Item]:
+        return [i for i in self.player.inventory if i.kind == ItemKind.SCROLL]
+
+    def compose(self) -> ComposeResult:
+        scrolls = self._scrolls()
+        with Static(id="scr-box"):
+            yield Static("Read Scroll", id="scr-title")
+            if not scrolls:
+                yield Static("[dim](no scrolls in inventory)[/dim]", classes="scr-line")
+            else:
+                for i, s in enumerate(scrolls):
+                    yield Static(f"[bold]{i+1}.[/bold]  {s.name}", classes="scr-line")
+            yield Static("Press number to read. Esc to cancel.", id="scr-hint")
+
+    def on_key(self, event) -> None:
+        if event.key == "escape":
+            self.dismiss(None)
+            return
+        scrolls = self._scrolls()
+        if event.character and event.character.isdigit():
+            idx = int(event.character) - 1
+            if 0 <= idx < len(scrolls):
+                self.dismiss(scrolls[idx])
+
+
 # ── Weapon-select screen ───────────────────────────────────────────────────────
 
 class WeaponSelectScreen(Screen):
@@ -275,6 +338,7 @@ class CombatScreen(Screen):
         wpn_label = weapon.name if weapon else "fists"
         has_inv_weapons = any(i.kind == ItemKind.WEAPON for i in p.inventory)
         has_potions = any(i.kind == ItemKind.POTION for i in p.inventory)
+        has_scrolls = any(i.kind == ItemKind.SCROLL for i in p.inventory)
 
         parts = [f"[bold](A)[/bold]ttack [{wpn_label}]"]
         if has_inv_weapons:
@@ -285,6 +349,10 @@ class CombatScreen(Screen):
             parts.append(spell_label)
         if has_potions:
             parts.append("[bold](P)[/bold]otion")
+        if has_scrolls:
+            parts.append("[bold](C)[/bold]Scroll")
+        if p.invuln_active:
+            parts.append(f"[bold cyan]INVULN({p.invuln_turns_remaining})[/bold cyan]")
         from .player import CharacterClass
         if p.char_class == CharacterClass.WARRIOR:
             if p.rage_active:
@@ -304,6 +372,7 @@ class CombatScreen(Screen):
         # Clear temp buffs after combat
         self.player.temp_defense_bonus = 0
         self.player.temp_attack_bonus = 0
+        self.player.invuln_turns_remaining = 0
         result = CombatResult(
             survived=survived,
             fled=fled,
@@ -326,6 +395,8 @@ class CombatScreen(Screen):
             self._do_potion()
         elif key == "r":
             self._do_rage()
+        elif key == "c":
+            self._do_scroll()
         elif key == "f":
             self._do_flee()
         else:
@@ -439,6 +510,43 @@ class CombatScreen(Screen):
 
         self._refresh()
 
+        if self.player.hp == 0:
+            self._push_log([f"You have been slain by the {self.monster.name}..."])
+            self._end_combat(survived=False, fled=False, monster_killed=False)
+
+    def _do_scroll(self) -> None:
+        if not any(i.kind == ItemKind.SCROLL for i in self.player.inventory):
+            return
+        self.app.push_screen(ScrollSelectScreen(self.player), callback=self._scroll_chosen)
+
+    def _scroll_chosen(self, item: Optional[Item]) -> None:
+        if item is None:
+            self._refresh()
+            return
+        msg, fireball_dmg = self.player.use_scroll(item)
+        self._push_log([f"  {msg}"])
+        if fireball_dmg:
+            self.monster.hp = max(0, self.monster.hp - fireball_dmg)
+            self._push_log([f"  {self.monster.name} takes {fireball_dmg} fire damage! HP: {self.monster.hp}/{self.monster.max_hp}"])
+            if self.monster.hp == 0:
+                self.player.xp += self.monster.xp_value
+                self.player.stat_monsters_killed += 1
+                self._push_log([f"You defeated the {self.monster.name}! +{self.monster.xp_value} XP"])
+                leveled, level_msgs = self.player.check_level_up()
+                if leveled:
+                    self._push_log(level_msgs)
+                loot = self.monster.drop_loot()
+                self._loot.extend(loot)
+                if loot:
+                    self._push_log([f"  {self.monster.name} dropped: {', '.join(i.name for i in loot)}"])
+                self._refresh()
+                self._end_combat(survived=True, fled=False, monster_killed=True)
+                return
+        # Monster counter-attacks after scroll use (unless invuln)
+        if self.monster.hp > 0:
+            lines = execute_monster_attack(self.player, self.monster)
+            self._push_log(lines)
+        self._refresh()
         if self.player.hp == 0:
             self._push_log([f"You have been slain by the {self.monster.name}..."])
             self._end_combat(survived=False, fled=False, monster_killed=False)
