@@ -285,6 +285,14 @@ class CombatScreen(Screen):
             parts.append(spell_label)
         if has_potions:
             parts.append("[bold](P)[/bold]otion")
+        from .player import CharacterClass
+        if p.char_class == CharacterClass.WARRIOR:
+            if p.rage_active:
+                parts.append(f"[bold red]RAGING({p.rage_turns_remaining})[/bold red]")
+            elif not p.rage_used_this_floor:
+                parts.append("[bold](R)[/bold]age")
+            else:
+                parts.append("[dim](R)age[/dim]")
         parts.append("[bold](F)[/bold]lee")
         self.query_one("#combat-actions", Static).update("  ".join(parts))
 
@@ -316,6 +324,8 @@ class CombatScreen(Screen):
             self._do_spell()
         elif key == "p":
             self._do_potion()
+        elif key == "r":
+            self._do_rage()
         elif key == "f":
             self._do_flee()
         else:
@@ -432,6 +442,11 @@ class CombatScreen(Screen):
         if self.player.hp == 0:
             self._push_log([f"You have been slain by the {self.monster.name}..."])
             self._end_combat(survived=False, fled=False, monster_killed=False)
+
+    def _do_rage(self) -> None:
+        msg = self.player.activate_rage()
+        self._push_log([msg])
+        self._refresh()
 
     def _do_flee(self) -> None:
         lines, succeeded = execute_flee_attempt(self.player, self.monster)

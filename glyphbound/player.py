@@ -76,6 +76,8 @@ class Player:
     spells:    List[Spell]            = field(default_factory=list)
     temp_defense_bonus: int           = 0   # cleared after each combat
     temp_attack_bonus: int            = 0   # cleared after each combat
+    rage_turns_remaining: int         = 0   # counts down each attack while raging
+    rage_used_this_floor: bool        = False  # once per floor
 
     def __post_init__(self) -> None:
         stats = _CLASS_STATS[self.char_class]
@@ -142,6 +144,8 @@ class Player:
             return "You don't have that.", None
         if item.equip_slot is None:
             return f"{item.name} cannot be equipped.", None
+        if item.warrior_only and self.char_class != CharacterClass.WARRIOR:
+            return f"{item.name} requires martial training — Warriors only.", None
         slot = item.equip_slot.value
         displaced = self.equipped.get(slot)
         if displaced:
@@ -280,6 +284,20 @@ class Player:
         return leveled, messages
 
     # ── Helpers ────────────────────────────────────────────────────────────────
+
+    @property
+    def rage_active(self) -> bool:
+        return self.char_class == CharacterClass.WARRIOR and self.rage_turns_remaining > 0
+
+    def activate_rage(self) -> str:
+        """Warrior activates Rage: 3 turns of double damage, once per floor."""
+        if self.char_class != CharacterClass.WARRIOR:
+            return "Only Warriors can Rage."
+        if self.rage_used_this_floor:
+            return "You have already raged this floor."
+        self.rage_turns_remaining = 3
+        self.rage_used_this_floor = True
+        return "[bold red]RAGE![/bold red] Your attacks deal double damage for 3 turns!"
 
     @property
     def trap_detect_chance(self) -> float:

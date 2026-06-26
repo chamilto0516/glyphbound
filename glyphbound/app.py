@@ -12,7 +12,7 @@ import re
 from .combat import apply_spell_to_monster
 from .combat_screen import CombatResult, CombatScreen
 from .dungeon import DOOR_CLOSED, STAIR_DOWN, STAIR_UP, generate_dungeon
-from .items import EquipSlot, Item, ItemKind
+from .items import EquipSlot, Item, ItemKind, HEAVY_WEAPONS, HEAVY_ARMOR, UNIQUE_HEAVY_WEAPONS
 from .map_view import MapView
 from .player import CharacterClass, Player
 from .spells import Spell, SpellEffect
@@ -290,6 +290,12 @@ class StatsPanel(Static):
         ]
         if p.has_mp:
             lines.append(f"MP: [cyan]{p.mp:>3}[/cyan]/{max_mp_display}")
+        elif p.rage_active:
+            lines.append(f"[bold red]RAGING — {p.rage_turns_remaining} turn(s) left[/bold red]")
+        elif p.char_class == CharacterClass.WARRIOR and p.rage_used_this_floor:
+            lines.append("[dim]Rage: used[/dim]")
+        elif p.char_class == CharacterClass.WARRIOR:
+            lines.append("[dim]Rage: ready[/dim]")
         else:
             lines.append("")
         lines.append("[dim]────────────────────────[/dim]")
@@ -945,6 +951,8 @@ class GlyphboundApp(App):
         next_floor = self.dungeon.floor + 1
         if self.player:
             self.player.stat_floors_descended += 1
+            self.player.rage_used_this_floor = False
+            self.player.rage_turns_remaining = 0
         self.dungeon = generate_dungeon(floor=next_floor, place_up_stair=True)
         self.map_view.dungeon = self.dungeon
         self.map_view.refresh()
@@ -962,6 +970,9 @@ class GlyphboundApp(App):
         prev_dungeon, stair_x, stair_y = self._floor_stack.pop()
         prev_dungeon.party_x, prev_dungeon.party_y = stair_x, stair_y
         self.dungeon = prev_dungeon
+        if self.player:
+            self.player.rage_used_this_floor = False
+            self.player.rage_turns_remaining = 0
         self.map_view.dungeon = self.dungeon
         self.map_view.refresh()
         self._update_title()

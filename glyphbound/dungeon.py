@@ -427,6 +427,7 @@ def _place_random_loot(dungeon: Dungeon, rooms: List[Room], rng: random.Random, 
     """Place random loot in rooms. Returns count of items placed."""
     from .items import (
         COMMON_WEAPONS, RARE_WEAPONS, UNIQUE_WEAPONS,
+        HEAVY_WEAPONS, HEAVY_ARMOR, UNIQUE_HEAVY_WEAPONS,
         COMMON_ARMOR, RARE_ARMOR, ACCESSORIES,
         POTIONS, TREASURE, SCROLLS
     )
@@ -460,17 +461,21 @@ def _place_random_loot(dungeon: Dungeon, rooms: List[Room], rng: random.Random, 
             item = rng.choice(COMMON_ARMOR)
 
         # Rare drops (8%)
-        elif roll < 0.94 and floor >= 3:  # 4% rare weapons (floor 3+)
+        elif roll < 0.92 and floor >= 3:  # 3% rare weapons (floor 3+)
             item = rng.choice(RARE_WEAPONS)
-        elif roll < 0.98 and floor >= 3:  # 4% rare armor (floor 3+)
+        elif roll < 0.94 and floor >= 3:  # 2% rare armor (floor 3+)
             item = rng.choice(RARE_ARMOR)
+        elif roll < 0.96 and floor >= 3:  # 2% heavy weapons (floor 3+)
+            item = rng.choice(HEAVY_WEAPONS)
+        elif roll < 0.98 and floor >= 4:  # 2% heavy armor (floor 4+)
+            item = rng.choice(HEAVY_ARMOR)
 
         # Very rare drops (2%)
         elif roll < 0.99 and floor >= 5:  # 1% accessories (floor 5+)
             item = rng.choice(ACCESSORIES)
         else:  # 1% unique weapons (floor 7+)
             if floor >= 7:
-                item = rng.choice(UNIQUE_WEAPONS)
+                item = rng.choice(UNIQUE_WEAPONS + UNIQUE_HEAVY_WEAPONS)
             else:
                 item = rng.choice(COMMON_WEAPONS)  # fallback
 

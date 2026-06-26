@@ -35,6 +35,7 @@ class Item:
     damage_sides: int   = 0   # 0 = static damage equal to damage_count
     damage_count: int   = 1   # number of dice, or static value when sides=0
     is_unique: bool     = False  # named/special items
+    warrior_only: bool  = False  # requires Warrior class to equip
 
     def __str__(self) -> str:
         parts = [self.name]
@@ -98,6 +99,49 @@ ITEM_BATTLE_AXE = Item(
     damage_sides=6, damage_count=2,   # 2d6
 )
 
+# ── Warrior-only Heavy Weapons ────────────────────────────────────────────────
+ITEM_GREAT_SWORD = Item(
+    name="Great Sword", kind=ItemKind.WEAPON, glyph="/",
+    attack_bonus=6, gold_value=80, equip_slot=EquipSlot.WEAPON,
+    damage_sides=12, damage_count=1,   # 1d12
+    warrior_only=True,
+)
+ITEM_WAR_HAMMER = Item(
+    name="War Hammer", kind=ItemKind.WEAPON, glyph="/",
+    attack_bonus=5, gold_value=70, equip_slot=EquipSlot.WEAPON,
+    damage_sides=8, damage_count=2,    # 2d8
+    warrior_only=True,
+)
+ITEM_HALBERD = Item(
+    name="Halberd", kind=ItemKind.WEAPON, glyph="/",
+    attack_bonus=7, gold_value=100, equip_slot=EquipSlot.WEAPON,
+    damage_sides=10, damage_count=2,   # 2d10
+    warrior_only=True,
+)
+ITEM_MAUL = Item(
+    name="Maul", kind=ItemKind.WEAPON, glyph="/",
+    attack_bonus=4, gold_value=60, equip_slot=EquipSlot.WEAPON,
+    damage_sides=6, damage_count=3,    # 3d6
+    warrior_only=True,
+)
+
+# ── Warrior-only Heavy Armor ───────────────────────────────────────────────────
+ITEM_PLATE_MAIL = Item(
+    name="Plate Mail", kind=ItemKind.ARMOR, glyph="]",
+    defense_bonus=6, gold_value=120, equip_slot=EquipSlot.ARMOR,
+    warrior_only=True,
+)
+ITEM_GREAT_HELM = Item(
+    name="Great Helm", kind=ItemKind.ARMOR, glyph="]",
+    defense_bonus=4, gold_value=70, equip_slot=EquipSlot.HELMET,
+    warrior_only=True,
+)
+ITEM_KITE_SHIELD = Item(
+    name="Kite Shield", kind=ItemKind.ARMOR, glyph="]",
+    defense_bonus=4, gold_value=80, equip_slot=EquipSlot.SHIELD,
+    warrior_only=True,
+)
+
 # ── Named/Unique Weapons ───────────────────────────────────────────────────────
 ITEM_FANG = Item(
     name="Fang", kind=ItemKind.WEAPON, glyph="/",
@@ -110,6 +154,12 @@ ITEM_FLAMEBRAND = Item(
     attack_bonus=5, gold_value=150, equip_slot=EquipSlot.WEAPON,
     damage_sides=10, damage_count=1,   # 1d10 + fire flavor
     is_unique=True,
+)
+ITEM_GORECLEAVER = Item(
+    name="Gorecleaver", kind=ItemKind.WEAPON, glyph="/",
+    attack_bonus=8, gold_value=250, equip_slot=EquipSlot.WEAPON,
+    damage_sides=12, damage_count=2,   # 2d12
+    is_unique=True, warrior_only=True,
 )
 
 ITEM_LEATHER_CAP = Item(
@@ -214,6 +264,10 @@ ITEM_SCROLL_TELEPORT = Item(
 COMMON_WEAPONS = [ITEM_CLUB, ITEM_DAGGER, ITEM_SHORT_SWORD, ITEM_STAFF, ITEM_MACE]
 RARE_WEAPONS = [ITEM_BROAD_SWORD, ITEM_LONG_SWORD, ITEM_BATTLE_AXE]
 UNIQUE_WEAPONS = [ITEM_FANG, ITEM_FLAMEBRAND]
+
+HEAVY_WEAPONS = [ITEM_GREAT_SWORD, ITEM_WAR_HAMMER, ITEM_HALBERD, ITEM_MAUL]
+HEAVY_ARMOR   = [ITEM_PLATE_MAIL, ITEM_GREAT_HELM, ITEM_KITE_SHIELD]
+UNIQUE_HEAVY_WEAPONS = [ITEM_GORECLEAVER]
 
 COMMON_ARMOR = [ITEM_LEATHER_CAP, ITEM_LEATHER_ARMOR, ITEM_SMALL_SHIELD]
 RARE_ARMOR = [ITEM_CHAIN_MAIL, ITEM_IRON_HELM, ITEM_TOWER_SHIELD]

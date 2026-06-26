@@ -57,6 +57,12 @@ def execute_player_attack(player: Player, monster: Monster) -> List[str]:
                 dmg *= 2
                 monster.hp = max(0, monster.hp - dmg)
                 log.append(f"  [bold yellow]BACKSTAB![/bold yellow] Your {wpn_name} strikes a vital spot for {dmg}! {monster.name} HP: {monster.hp}/{monster.max_hp}")
+            elif player.rage_active:
+                dmg *= 2
+                player.rage_turns_remaining -= 1
+                rage_note = " (Rage fades)" if player.rage_turns_remaining == 0 else f" (Rage: {player.rage_turns_remaining} left)"
+                monster.hp = max(0, monster.hp - dmg)
+                log.append(f"  [bold red]RAGE![/bold red] Your {wpn_name} smashes for {dmg}!{rage_note} {monster.name} HP: {monster.hp}/{monster.max_hp}")
             else:
                 monster.hp = max(0, monster.hp - dmg)
                 log.append(f"  Your {wpn_name} hits for {dmg}! {monster.name} HP: {monster.hp}/{monster.max_hp}")
@@ -71,10 +77,16 @@ def execute_monster_attack(player: Player, monster: Monster) -> List[str]:
     m_roll = random.randint(1, 6) + monster.attack
     if _attacker_hits(m_roll, player.defense):
         dmg = roll_damage(monster.weapon)
+        # Warrior Toughness: 50% chance to absorb 1 point of damage
+        if player.char_class == CharacterClass.WARRIOR and dmg > 1 and random.random() < 0.50:
+            dmg -= 1
+            toughness_note = " [dim](Toughness)[/dim]"
+        else:
+            toughness_note = ""
         player.hp = max(0, player.hp - dmg)
         player.stat_damage_taken += dmg
         wpn_name = monster.weapon.name if monster.weapon else "claws"
-        log.append(f"  {monster.name} hits you with {wpn_name} for {dmg}! Your HP: {player.hp}/{player.max_hp}")
+        log.append(f"  {monster.name} hits you with {wpn_name} for {dmg}!{toughness_note} Your HP: {player.hp}/{player.max_hp}")
     else:
         log.append(f"  {monster.name} misses you.")
     return log
