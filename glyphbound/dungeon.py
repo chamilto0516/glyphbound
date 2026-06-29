@@ -13,8 +13,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-MAP_WIDTH  = 200
-MAP_HEIGHT = 200
+MAP_WIDTH  = 100
+MAP_HEIGHT = 60
 
 VOID        = 0
 FLOOR       = 1
@@ -142,12 +142,16 @@ class Dungeon:
         return False
 
 
-def generate_dungeon(seed: int = None, theme: Theme = None, floor: int = 1, place_up_stair: bool = False) -> Dungeon:
+def generate_dungeon(seed: int = None, theme: "Theme | None" = None, floor: int = 1, place_up_stair: bool = False, theme_name: "str | None" = None) -> Dungeon:
     rng = random.Random(seed)
 
     if theme is None:
         from .themes import ALL_THEMES
-        theme = rng.choice(ALL_THEMES)
+        if theme_name is not None:
+            matches = [t for t in ALL_THEMES if t.name.lower() == theme_name.lower()]
+            theme = matches[0] if matches else rng.choice(ALL_THEMES)
+        else:
+            theme = rng.choice(ALL_THEMES)
 
     dungeon = Dungeon()
     dungeon.tiles = [[VOID] * MAP_WIDTH for _ in range(MAP_HEIGHT)]
@@ -345,21 +349,21 @@ def _add_branch_rooms(
         attempts += 1
         parent = rng.choice(rooms)
         side = rng.choice(("top", "bottom", "left", "right"))
-        bw = rng.randint(3, 5)
-        bh = rng.randint(3, 4)
+        bw = rng.randint(4, 6)
+        bh = rng.randint(4, 5)
 
         if side == "top":
             if parent.w < 4:
                 continue
             wx = rng.randint(parent.x + 1, parent.x + parent.w - 2)
             branch = Room(wx - bw // 2, parent.y - 1 - bh, bw, bh)
-            conn = (wx, branch.y + bh - 1, wx, parent.y)
+            conn = (wx, wx, branch.y + bh - 1, parent.y)
         elif side == "bottom":
             if parent.w < 4:
                 continue
             wx = rng.randint(parent.x + 1, parent.x + parent.w - 2)
             branch = Room(wx - bw // 2, parent.y + parent.h + 1, bw, bh)
-            conn = (wx, parent.y + parent.h - 1, wx, branch.y)
+            conn = (wx, wx, parent.y + parent.h - 1, branch.y)
         elif side == "left":
             if parent.h < 4:
                 continue
@@ -494,23 +498,116 @@ def _place_random_loot(dungeon: Dungeon, rooms: List[Room], rng: random.Random, 
 
 def _carve_h_tunnel(tiles: List[List[int]], x1: int, x2: int, y: int,
                     room_walls: Set[Tuple[int, int]]) -> None:
+    door_placed = False
     for x in range(min(x1, x2), max(x1, x2) + 1):
         if tiles[y][x] == WALL and (x, y) in room_walls:
-            tiles[y][x] = DOOR_CLOSED
+            if not door_placed:
+                tiles[y][x] = DOOR_CLOSED
+                door_placed = True
+            else:
+                tiles[y][x] = FLOOR
         elif tiles[y][x] not in (FLOOR, DOOR_CLOSED, DOOR_OPEN):
             tiles[y][x] = FLOOR
         for ny in (y - 1, y + 1):
             if 0 <= ny < MAP_HEIGHT and tiles[ny][x] == VOID:
                 tiles[ny][x] = WALL
+    # Cap open endpoints
+    for ex in (min(x1, x2) - 1, max(x1, x2) + 1):
+        if 0 <= ex < MAP_WIDTH and tiles[y][ex] == VOID:
+            tiles[y][ex] = WALL
 
 
 def _carve_v_tunnel(tiles: List[List[int]], y1: int, y2: int, x: int,
                     room_walls: Set[Tuple[int, int]]) -> None:
+    door_placed = False
     for y in range(min(y1, y2), max(y1, y2) + 1):
         if tiles[y][x] == WALL and (x, y) in room_walls:
-            tiles[y][x] = DOOR_CLOSED
+            if not door_placed:
+                tiles[y][x] = DOOR_CLOSED
+                door_placed = True
+            else:
+                tiles[y][x] = FLOOR
         elif tiles[y][x] not in (FLOOR, DOOR_CLOSED, DOOR_OPEN):
             tiles[y][x] = FLOOR
         for nx in (x - 1, x + 1):
             if 0 <= nx < MAP_WIDTH and tiles[y][nx] == VOID:
                 tiles[y][nx] = WALL
+    # Cap open endpoints
+    for ey in (min(y1, y2) - 1, max(y1, y2) + 1):
+        if 0 <= ey < MAP_HEIGHT and tiles[ey][x] == VOID:
+            tiles[ey][x] = WALL
+
+
+def dump_map_text(dungeon: "Dungeon") -> None:
+    """Print the dungeon as ASCII to stdout; emit a connectivity summary to stderr."""
+    import sys
+
+    TILE_CHARS = {
+        VOID:        ' ',
+        FLOOR:       '.',
+        WALL:        '#',
+        DOOR_CLOSED: '+',
+        DOOR_OPEN:   '-',
+        STAIR_DOWN:  '>',
+        STAIR_UP:    '<',
+    }
+    LABELS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+
+    # Build char grid
+    grid = [[TILE_CHARS.get(dungeon.tiles[y][x], '?') for x in range(dungeon.width)]
+            for y in range(dungeon.height)]
+
+    # Overlay room-center labels
+    all_rooms = list(dungeon.rooms) + list(dungeon.branch_rooms)
+    for idx, room in enumerate(all_rooms):
+        cx, cy = room.center
+        label = LABELS[idx] if idx < len(LABELS) else '.'
+        grid[cy][cx] = label
+
+    # Overlay party start
+    grid[dungeon.party_y][dungeon.party_x] = '@'
+
+    # Print map
+    for row in grid:
+        print(''.join(row))
+
+    # Flood-fill from party start to find reachable tiles
+    passable = {FLOOR, DOOR_CLOSED, DOOR_OPEN, STAIR_DOWN, STAIR_UP}
+    visited: Set[Tuple[int, int]] = set()
+    stack = [(dungeon.party_x, dungeon.party_y)]
+    while stack:
+        cx, cy = stack.pop()
+        if (cx, cy) in visited:
+            continue
+        if not (0 <= cx < dungeon.width and 0 <= cy < dungeon.height):
+            continue
+        if dungeon.tiles[cy][cx] not in passable:
+            continue
+        visited.add((cx, cy))
+        for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            nb = (cx + dx, cy + dy)
+            if nb not in visited:
+                stack.append(nb)
+
+    # Connectivity report
+    reachable = 0
+    disconnected = []
+    for room in all_rooms:
+        rx, ry = room.center
+        if (rx, ry) in visited:
+            reachable += 1
+        else:
+            disconnected.append((rx, ry))
+
+    theme_name = dungeon.theme.name if dungeon.theme else "unknown"
+    print(f"\n--- Map Summary ---", file=sys.stderr)
+    print(f"Theme : {theme_name}", file=sys.stderr)
+    print(f"Floor : {dungeon.floor}", file=sys.stderr)
+    print(f"Rooms : {len(dungeon.rooms)} main + {len(dungeon.branch_rooms)} branch = {len(all_rooms)} total", file=sys.stderr)
+    print(f"Reachable from @ : {reachable}/{len(all_rooms)}", file=sys.stderr)
+    if disconnected:
+        print(f"DISCONNECTED rooms ({len(disconnected)}):", file=sys.stderr)
+        for pos in disconnected:
+            print(f"  center at {pos}", file=sys.stderr)
+    else:
+        print("All rooms reachable.", file=sys.stderr)

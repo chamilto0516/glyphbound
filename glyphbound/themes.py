@@ -40,10 +40,10 @@ THEME_LIBRARY = Theme(
     },
     party_style=Style(color="bright_yellow", bgcolor=_BG, bold=True),
     title_color="ansi_bright_yellow",
-    min_rooms=12, max_rooms=18,
-    min_room_w=8, max_room_w=18,
-    min_room_h=5, max_room_h=12,
-    max_corridor=160,
+    min_rooms=8, max_rooms=14,
+    min_room_w=8, max_room_w=16,
+    min_room_h=5, max_room_h=10,
+    max_corridor=70,
 )
 
 THEME_LIVING = Theme(
@@ -60,10 +60,10 @@ THEME_LIVING = Theme(
     },
     party_style=Style(color="bright_green", bgcolor=_BG, bold=True),
     title_color="ansi_bright_green",
-    min_rooms=10, max_rooms=16,
-    min_room_w=6, max_room_w=20,
-    min_room_h=4, max_room_h=14,
-    max_corridor=170,
+    min_rooms=8, max_rooms=14,
+    min_room_w=6, max_room_w=16,
+    min_room_h=5, max_room_h=10,
+    max_corridor=75,
 )
 
 THEME_JAIL = Theme(
@@ -80,10 +80,10 @@ THEME_JAIL = Theme(
     },
     party_style=Style(color="bright_white", bgcolor=_BG, bold=True),
     title_color="ansi_bright_white",
-    min_rooms=14, max_rooms=22,
-    min_room_w=4, max_room_w=8,
-    min_room_h=3, max_room_h=6,
-    max_corridor=140,
+    min_rooms=10, max_rooms=14,
+    min_room_w=5, max_room_w=8,
+    min_room_h=4, max_room_h=6,
+    max_corridor=60,
 )
 
 THEME_CATACOMBS = Theme(
@@ -100,10 +100,10 @@ THEME_CATACOMBS = Theme(
     },
     party_style=Style(color="bright_red", bgcolor=_BG, bold=True),
     title_color="ansi_bright_red",
-    min_rooms=12, max_rooms=18,
-    min_room_w=5, max_room_w=12,
-    min_room_h=4, max_room_h=9,
-    max_corridor=160,
+    min_rooms=8, max_rooms=14,
+    min_room_w=5, max_room_w=10,
+    min_room_h=5, max_room_h=8,
+    max_corridor=70,
 )
 
 THEME_RITUAL = Theme(
@@ -120,10 +120,10 @@ THEME_RITUAL = Theme(
     },
     party_style=Style(color="bright_magenta", bgcolor=_BG, bold=True),
     title_color="ansi_bright_magenta",
-    min_rooms=10, max_rooms=16,
-    min_room_w=7, max_room_w=16,
-    min_room_h=5, max_room_h=12,
-    max_corridor=170,
+    min_rooms=8, max_rooms=14,
+    min_room_w=7, max_room_w=14,
+    min_room_h=5, max_room_h=10,
+    max_corridor=75,
 )
 
 THEME_CAVERNS = Theme(
@@ -140,10 +140,10 @@ THEME_CAVERNS = Theme(
     },
     party_style=Style(color="bright_cyan", bgcolor=_BG, bold=True),
     title_color="ansi_cyan",
-    min_rooms=11, max_rooms=17,
-    min_room_w=8, max_room_w=24,
-    min_room_h=6, max_room_h=16,
-    max_corridor=160,
+    min_rooms=8, max_rooms=14,
+    min_room_w=8, max_room_w=18,
+    min_room_h=5, max_room_h=10,
+    max_corridor=70,
 )
 
 ALL_THEMES = [

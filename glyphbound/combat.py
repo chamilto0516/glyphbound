@@ -73,6 +73,7 @@ def execute_player_attack(player: Player, monster: Monster) -> List[str]:
 
 def execute_monster_attack(player: Player, monster: Monster) -> List[str]:
     """Execute one monster attack round. Mutates player.hp. Returns log lines."""
+    from .player import CharacterClass
     log: List[str] = []
     # Invulnerability blocks all damage; decrement counter
     if player.invuln_active:

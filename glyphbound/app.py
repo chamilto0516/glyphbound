@@ -723,7 +723,10 @@ class GlyphboundApp(App):
             items = self.dungeon.items_at(x, y)
             if items:
                 names = ", ".join(i.name for i in items)
-                self.message_log.add(f"You see here: {names}. (G to pick up)")
+                if len(items) == 1:
+                    self.message_log.add(f"You notice something interesting: {names}. (G to pick up)")
+                else:
+                    self.message_log.add(f"You notice several things of interest: {names}. (G to pick up)")
 
     def _detect_magic_traps(self) -> None:
         """Detect Magic reveals all Flame Ward traps on the current floor."""
