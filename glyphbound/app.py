@@ -14,6 +14,7 @@ from .combat_screen import CombatResult, CombatScreen
 from .dungeon import DOOR_CLOSED, SHOP, STAIR_DOWN, STAIR_UP, generate_dungeon
 from .shop_screen import ShopScreen
 from .items import EquipSlot, Item, ItemKind, HEAVY_WEAPONS, HEAVY_ARMOR, UNIQUE_HEAVY_WEAPONS
+from .player import slot_label as _slot_label
 from .map_view import MapView
 from .player import CharacterClass, Player
 from .spells import Spell, SpellEffect
@@ -301,16 +302,22 @@ class StatsPanel(Static):
             lines.append("")
         lines.append("[dim]────────────────────────[/dim]")
         # equipped slots
-        weapon = p.equipped.get(EquipSlot.WEAPON.value)
-        helmet = p.equipped.get(EquipSlot.HELMET.value)
-        armor  = p.equipped.get(EquipSlot.ARMOR.value)
-        shield = p.equipped.get(EquipSlot.SHIELD.value)
-        ring   = p.equipped.get(EquipSlot.RING.value)
-        amulet = p.equipped.get(EquipSlot.AMULET.value)
+        weapon    = p.equipped.get(EquipSlot.WEAPON.value)
+        helmet    = p.equipped.get(EquipSlot.HELMET.value)
+        armor     = p.equipped.get(EquipSlot.ARMOR.value)
+        shield    = p.equipped.get(EquipSlot.SHIELD.value)
+        ring_l    = p.equipped.get(EquipSlot.RING_LEFT.value)
+        ring_r    = p.equipped.get(EquipSlot.RING_RIGHT.value)
+        amulet    = p.equipped.get(EquipSlot.AMULET.value)
+        boots     = p.equipped.get(EquipSlot.BOOTS.value)
+        gloves    = p.equipped.get(EquipSlot.GLOVES.value)
+        off_label = "2H" if p.is_dual_wielding else "S"
         lines.append(f"[dim]W:[/dim]{weapon.name if weapon else '—':<14} [dim]H:[/dim]{helmet.name if helmet else '—'}")
-        lines.append(f"[dim]A:[/dim]{armor.name  if armor  else '—':<14} [dim]S:[/dim]{shield.name if shield else '—'}")
-        if ring or amulet:
-            lines.append(f"[dim]R:[/dim]{ring.name if ring else '—':<14} [dim]N:[/dim]{amulet.name if amulet else '—'}")
+        lines.append(f"[dim]A:[/dim]{armor.name  if armor  else '—':<14} [dim]{off_label}:[/dim]{shield.name if shield else '—'}")
+        lines.append(f"[dim]RL:[/dim]{ring_l.name if ring_l else '—':<13} [dim]RR:[/dim]{ring_r.name if ring_r else '—'}")
+        lines.append(f"[dim]N:[/dim]{amulet.name if amulet else '—':<14} [dim]B:[/dim]{boots.name if boots else '—'}")
+        if gloves:
+            lines.append(f"[dim]G:[/dim]{gloves.name}")
         return "\n".join(lines)
 
 
@@ -345,7 +352,7 @@ class InventoryScreen(Screen):
     }
 
     #inv-box {
-        width: 60;
+        width: 66;
         height: auto;
         max-height: 90vh;
         border: double ansi_bright_yellow;
@@ -360,114 +367,158 @@ class InventoryScreen(Screen):
         margin-bottom: 0;
     }
 
-    #inv-count {
-        text-align: center;
-        color: #555555;
-        margin-bottom: 1;
-    }
-
     #inv-hint {
         color: #888888;
         margin-bottom: 1;
     }
 
-    #inv-list {
+    #inv-equipped-header {
+        color: ansi_bright_green;
+        text-style: bold;
+        margin-top: 1;
+    }
+
+    #inv-bag-header {
+        color: ansi_bright_cyan;
+        text-style: bold;
+        margin-top: 1;
+    }
+
+    #inv-equipped {
         height: auto;
-        max-height: 24;
+        max-height: 12;
         overflow-y: auto;
     }
 
-    .inv-line {
-        color: white;
+    #inv-bag {
+        height: auto;
+        max-height: 12;
+        overflow-y: auto;
     }
 
     #inv-actions {
         color: #aaaaaa;
         margin-top: 1;
     }
+
+    #inv-msg {
+        color: ansi_bright_cyan;
+        margin-top: 0;
+        height: 1;
+    }
     """
+
+    # Canonical slot display order for the Equipped section
+    _SLOT_ORDER = [
+        "weapon", "shield", "armor", "helmet",
+        "ring_left", "ring_right", "amulet", "boots", "gloves",
+    ]
 
     def __init__(self, player: Player) -> None:
         super().__init__()
         self.player = player
         self._selected: int = 0
+        self._last_msg: str | None = None
 
-    def _all_items(self) -> list[tuple[Item, bool, str]]:
-        """Returns list of (item, is_equipped, slot_label)."""
+    def _flat_items(self) -> list[tuple[Item, bool, str]]:
+        """
+        Returns (item, is_equipped, slot_key) for every item, equipped slots
+        first (in canonical order), then bag items.
+        """
         result = []
+        for slot in self._SLOT_ORDER:
+            item = self.player.equipped.get(slot)
+            if item is not None:
+                result.append((item, True, slot))
         for item in self.player.inventory:
             result.append((item, False, ""))
-        for slot, item in self.player.equipped.items():
-            result.append((item, True, slot))
         return result
 
     def compose(self) -> ComposeResult:
         with Static(id="inv-box"):
-            yield Static("Inventory", id="inv-title")
-            yield Static("", id="inv-count")
+            yield Static("Equipment & Inventory", id="inv-title")
             yield Static(
-                "[dim]↑↓[/dim] navigate   "
-                "[bold](E)[/bold]quip/Unequip   "
+                "[dim]↑↓/jk[/dim] navigate   "
+                "[bold](E)[/bold]quip/Remove   "
                 "[bold](U)[/bold]se   "
                 "[bold](D)[/bold]rop   "
                 "[bold](I)[/bold] close",
                 id="inv-hint",
             )
-            yield Static(id="inv-list")
+            yield Static("── Equipped ─────────────────────────────────────", id="inv-equipped-header")
+            yield Static(id="inv-equipped")
+            yield Static("── Pack ──────────────────────────────────────────", id="inv-bag-header")
+            yield Static(id="inv-bag")
             yield Static("", id="inv-actions")
+            yield Static("", id="inv-msg")
 
     def on_mount(self) -> None:
-        items = self._all_items()
-        if items:
-            self._selected = 0
+        self._selected = 0
         self._refresh_list()
 
     def _refresh_list(self) -> None:
-        items = self._all_items()
-
-        # Clamp selection
+        items = self._flat_items()
         if items:
             self._selected = max(0, min(self._selected, len(items) - 1))
 
-        count_widget   = self.query_one("#inv-count",   Static)
-        inv_list       = self.query_one("#inv-list",    Static)
-        actions_widget = self.query_one("#inv-actions", Static)
+        equipped_widget = self.query_one("#inv-equipped", Static)
+        bag_widget      = self.query_one("#inv-bag",      Static)
+        actions_widget  = self.query_one("#inv-actions",  Static)
 
-        count_widget.update(f"[dim]{len(items)} item{'s' if len(items) != 1 else ''}[/dim]")
+        # Split into two groups
+        equipped_items = [(it, sl) for it, eq, sl in items if eq]
+        bag_items      = [(it, sl) for it, eq, sl in items if not eq]
 
+        # ── Equipped section ──────────────────────────────────────────────────
+        if equipped_items:
+            eq_lines = []
+            for idx, (it, sl) in enumerate(equipped_items):
+                flat_idx = idx
+                label = f"[bold green]{_slot_label(sl):>10}[/bold green]  {it}"
+                if flat_idx == self._selected:
+                    eq_lines.append(f"[bold ansi_bright_yellow]> {label}[/bold ansi_bright_yellow]")
+                else:
+                    eq_lines.append(f"  {label}")
+            equipped_widget.update("\n".join(eq_lines))
+        else:
+            equipped_widget.update("  [dim](nothing equipped)[/dim]")
+
+        # ── Bag section ───────────────────────────────────────────────────────
+        eq_count = len(equipped_items)
+        if bag_items:
+            bag_lines = []
+            for idx, (it, _sl) in enumerate(bag_items):
+                flat_idx = eq_count + idx
+                if flat_idx == self._selected:
+                    bag_lines.append(f"[bold ansi_bright_yellow]> {it}[/bold ansi_bright_yellow]")
+                else:
+                    bag_lines.append(f"  {it}")
+            bag_widget.update("\n".join(bag_lines))
+        else:
+            bag_widget.update("  [dim](empty)[/dim]")
+
+        # ── Action hints for selected item ────────────────────────────────────
         if not items:
-            inv_list.update("[dim](empty)[/dim]")
             actions_widget.update("")
             return
-
-        lines = []
-        for i, (item, equipped, slot) in enumerate(items):
-            slot_tag = f" [dim][{slot}][/dim]" if equipped else ""
-            if i == self._selected:
-                lines.append(
-                    f"[bold ansi_bright_yellow]>[/bold ansi_bright_yellow] "
-                    f"[bold ansi_bright_yellow]{item}{slot_tag}[/bold ansi_bright_yellow]"
-                )
-            else:
-                lines.append(f"  {item}{slot_tag}")
-        inv_list.update("\n".join(lines))
-
-        item, equipped, slot = items[self._selected]
+        item, is_eq, slot = items[self._selected]
         opts = []
-        if item.equip_slot and not equipped:
+        if is_eq:
+            opts.append("[bold](E)[/bold]remove")
+        elif item.equip_slot:
             opts.append("[bold](E)[/bold]quip")
-        if equipped:
-            opts.append("[bold](E)[/bold]unequip")
         if item.kind == ItemKind.POTION:
             opts.append("[bold](U)[/bold]se")
+        if item.kind == ItemKind.SCROLL:
+            opts.append("[bold](U)[/bold]se scroll")
         opts.append("[bold](D)[/bold]rop")
         actions_widget.update("  ".join(opts))
 
     def on_key(self, event) -> None:
-        items = self._all_items()
+        items = self._flat_items()
 
         if event.key in ("escape", "i"):
-            self.dismiss(None)
+            self.dismiss(self._last_msg)
             return
 
         if not items:
@@ -483,22 +534,27 @@ class InventoryScreen(Screen):
             self._refresh_list()
             return
 
-        item, equipped, slot = items[self._selected]
+        item, is_eq, slot = items[self._selected]
         msg = None
 
         if event.key == "e":
-            if equipped:
+            if is_eq:
                 msg = self.player.unequip(EquipSlot(slot))
             elif item.equip_slot:
                 msg, _ = self.player.equip(item)
-        elif event.key == "u" and item.kind == ItemKind.POTION:
-            msg = self.player.use_potion(item)
+        elif event.key == "u":
+            if item.kind == ItemKind.POTION:
+                msg = self.player.use_potion(item)
+            elif item.kind == ItemKind.SCROLL:
+                msg, _ = self.player.use_scroll(item)
         elif event.key == "d":
             msg, _ = self.player.drop(item)
             self._selected = max(0, self._selected - 1)
 
         if msg:
-            self.dismiss(msg)
+            self._last_msg = msg
+            self.query_one("#inv-msg", Static).update(f"[dim]{msg}[/dim]")
+            self._refresh_list()
 
 
 # ── Spell screen ──────────────────────────────────────────────────────────────
@@ -602,7 +658,7 @@ class GlyphboundApp(App):
     }
 
     StatsPanel {
-        width: 28;
+        width: 38;
         height: 8;
         background: black;
         padding: 0 1;
@@ -723,13 +779,13 @@ class GlyphboundApp(App):
             # After player moves, run monster AI turns
             self._monster_turns()
             self.map_view.refresh()
-            items = self.dungeon.items_at(x, y)
+            items = list(self.dungeon.items_at(x, y))
+            for item in items:
+                msg = self.player.pick_up(item)
+                self.dungeon.remove_item(x, y, item)
+                self.message_log.add(msg)
             if items:
-                names = ", ".join(i.name for i in items)
-                if len(items) == 1:
-                    self.message_log.add(f"You notice something interesting: {names}. (G to pick up)")
-                else:
-                    self.message_log.add(f"You notice several things of interest: {names}. (G to pick up)")
+                self.stats_panel.refresh()
 
     def _detect_magic_traps(self) -> None:
         """Detect Magic reveals all Flame Ward traps on the current floor."""
@@ -886,9 +942,6 @@ class GlyphboundApp(App):
             return
         x, y = self.dungeon.party_x, self.dungeon.party_y
         items = list(self.dungeon.items_at(x, y))
-        if not items:
-            self.message_log.add("Nothing to pick up here.")
-            return
         for item in items:
             msg = self.player.pick_up(item)
             self.dungeon.remove_item(x, y, item)

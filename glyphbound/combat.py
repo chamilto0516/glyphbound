@@ -34,8 +34,41 @@ def _attacker_hits(attack_roll: int, defense: int) -> bool:
     return attack_roll > defense
 
 
+def _single_weapon_attack(
+    player: Player,
+    monster: Monster,
+    weapon: "Item | None",
+    label: str,
+    log: List[str],
+) -> None:
+    """Roll one weapon strike. Mutates monster.hp and appends to log."""
+    from .player import CharacterClass
+    p_roll = random.randint(1, 6) + player.attack
+    if not _attacker_hits(p_roll, monster.defense):
+        log.append(f"  Your {label} misses the {monster.name}.")
+        return
+    dmg = roll_damage(weapon)
+    backstab = (
+        player.char_class == CharacterClass.THIEF
+        and random.random() < player.level * 0.10
+    )
+    if backstab:
+        dmg *= 2
+        monster.hp = max(0, monster.hp - dmg)
+        log.append(f"  [bold yellow]BACKSTAB![/bold yellow] Your {label} strikes a vital spot for {dmg}! {monster.name} HP: {monster.hp}/{monster.max_hp}")
+    elif player.rage_active:
+        dmg *= 2
+        player.rage_turns_remaining -= 1
+        rage_note = " (Rage fades)" if player.rage_turns_remaining == 0 else f" (Rage: {player.rage_turns_remaining} left)"
+        monster.hp = max(0, monster.hp - dmg)
+        log.append(f"  [bold red]RAGE![/bold red] Your {label} smashes for {dmg}!{rage_note} {monster.name} HP: {monster.hp}/{monster.max_hp}")
+    else:
+        monster.hp = max(0, monster.hp - dmg)
+        log.append(f"  Your {label} hits for {dmg}! {monster.name} HP: {monster.hp}/{monster.max_hp}")
+
+
 def execute_player_attack(player: Player, monster: Monster) -> List[str]:
-    """Execute one player weapon attack round. Mutates monster.hp. Returns log lines."""
+    """Execute one player attack round. Dual-wielding Warriors strike twice. Returns log lines."""
     from .player import CharacterClass
     log: List[str] = []
     player_weapon = player.equipped.get(EquipSlot.WEAPON.value)
@@ -44,30 +77,16 @@ def execute_player_attack(player: Player, monster: Monster) -> List[str]:
         msg, dmg = player.cast_spell(spell)
         monster.hp = max(0, monster.hp - dmg)
         log.append(f"  {msg}  {monster.name} HP: {monster.hp}/{monster.max_hp}")
+    elif player.is_dual_wielding:
+        wpn_name = player_weapon.name if player_weapon else "fists"
+        off_wpn = player.off_hand_weapon
+        off_name = off_wpn.name if off_wpn else "fists"
+        _single_weapon_attack(player, monster, player_weapon, wpn_name, log)
+        if monster.hp > 0:
+            _single_weapon_attack(player, monster, off_wpn, off_name, log)
     else:
-        p_roll = random.randint(1, 6) + player.attack
-        if _attacker_hits(p_roll, monster.defense):
-            dmg = roll_damage(player_weapon)
-            wpn_name = player_weapon.name if player_weapon else "fists"
-            backstab = (
-                player.char_class == CharacterClass.THIEF
-                and random.random() < player.level * 0.10
-            )
-            if backstab:
-                dmg *= 2
-                monster.hp = max(0, monster.hp - dmg)
-                log.append(f"  [bold yellow]BACKSTAB![/bold yellow] Your {wpn_name} strikes a vital spot for {dmg}! {monster.name} HP: {monster.hp}/{monster.max_hp}")
-            elif player.rage_active:
-                dmg *= 2
-                player.rage_turns_remaining -= 1
-                rage_note = " (Rage fades)" if player.rage_turns_remaining == 0 else f" (Rage: {player.rage_turns_remaining} left)"
-                monster.hp = max(0, monster.hp - dmg)
-                log.append(f"  [bold red]RAGE![/bold red] Your {wpn_name} smashes for {dmg}!{rage_note} {monster.name} HP: {monster.hp}/{monster.max_hp}")
-            else:
-                monster.hp = max(0, monster.hp - dmg)
-                log.append(f"  Your {wpn_name} hits for {dmg}! {monster.name} HP: {monster.hp}/{monster.max_hp}")
-        else:
-            log.append(f"  Your attack misses the {monster.name}.")
+        wpn_name = player_weapon.name if player_weapon else "fists"
+        _single_weapon_attack(player, monster, player_weapon, wpn_name, log)
     return log
 
 

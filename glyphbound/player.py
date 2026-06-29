@@ -30,6 +30,25 @@ _LEVEL_UP_GAINS = {
     CharacterClass.CLERIC:  {"hp": 4, "attack": 0, "defense": 1, "mp": 3},
 }
 
+SLOT_LABELS: dict = {
+    "weapon":     "main hand",
+    "shield":     "off hand",
+    "armor":      "body",
+    "helmet":     "head",
+    "ring_left":  "left ring",
+    "ring_right": "right ring",
+    "amulet":     "neck",
+    "boots":      "boots",
+    "gloves":     "gloves",
+}
+
+def slot_label(slot_value: str) -> str:
+    return SLOT_LABELS.get(slot_value, slot_value)
+
+# Keep private alias so internal equip() call doesn't break
+_slot_label = slot_label
+
+
 def xp_for_level(level: int) -> int:
     """Return cumulative XP needed to reach the given level."""
     if level <= 1:
@@ -140,20 +159,46 @@ class Player:
         return f"Picked up {item.name}."
 
     def equip(self, item: Item) -> Tuple[str, Optional[Item]]:
-        """Equip an item from inventory. Returns (message, unequipped_item_or_None)."""
+        """Equip an item from inventory. Returns (message, unequipped_item_or_None).
+
+        Special routing:
+        - Rings auto-fill ring_left first, then ring_right.
+        - Warriors may equip a weapon into the shield slot (dual-wield).
+          Equipping a shield replaces any off-hand weapon.
+        """
         if item not in self.inventory:
             return "You don't have that.", None
         if item.equip_slot is None:
             return f"{item.name} cannot be equipped.", None
         if item.warrior_only and self.char_class != CharacterClass.WARRIOR:
             return f"{item.name} requires martial training — Warriors only.", None
-        slot = item.equip_slot.value
+
+        # ── Determine actual slot key ──────────────────────────────────────────
+        if item.equip_slot == EquipSlot.RING:
+            # Auto-fill left first, then right
+            if EquipSlot.RING_LEFT.value not in self.equipped:
+                slot = EquipSlot.RING_LEFT.value
+            elif EquipSlot.RING_RIGHT.value not in self.equipped:
+                slot = EquipSlot.RING_RIGHT.value
+            else:
+                # Both full — displace left ring
+                slot = EquipSlot.RING_LEFT.value
+        elif (item.equip_slot == EquipSlot.WEAPON
+              and self.char_class == CharacterClass.WARRIOR
+              and EquipSlot.WEAPON.value in self.equipped):
+            # Warrior already has a main weapon — offer the off-hand slot
+            slot = EquipSlot.SHIELD.value
+        else:
+            slot = item.equip_slot.value
+
         displaced = self.equipped.get(slot)
         if displaced:
             self.inventory.append(displaced)
         self.equipped[slot] = item
         self.inventory.remove(item)
-        msg = f"Equipped {item.name}."
+
+        slot_label = _slot_label(slot)
+        msg = f"Equipped {item.name} ({slot_label})."
         if displaced:
             msg += f" ({displaced.name} returned to inventory.)"
         return msg, displaced
@@ -353,3 +398,18 @@ class Player:
     def xp_to_next_level(self) -> int:
         """Return XP needed for next level, or 0 if at max tracked level."""
         return max(0, xp_for_level(self.level + 1) - self.xp)
+
+    @property
+    def is_dual_wielding(self) -> bool:
+        """True when a Warrior has a weapon in both the main and off-hand (shield) slots."""
+        if self.char_class != CharacterClass.WARRIOR:
+            return False
+        off_hand = self.equipped.get(EquipSlot.SHIELD.value)
+        return off_hand is not None and off_hand.equip_slot == EquipSlot.WEAPON
+
+    @property
+    def off_hand_weapon(self) -> Optional[Item]:
+        """Return the off-hand weapon when dual-wielding, else None."""
+        if not self.is_dual_wielding:
+            return None
+        return self.equipped.get(EquipSlot.SHIELD.value)

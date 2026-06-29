@@ -13,12 +13,16 @@ class ItemKind(Enum):
 
 
 class EquipSlot(Enum):
-    WEAPON  = "weapon"
-    ARMOR   = "armor"
-    HELMET  = "helmet"
-    SHIELD  = "shield"
-    RING    = "ring"
-    AMULET  = "amulet"
+    WEAPON    = "weapon"
+    ARMOR     = "armor"
+    HELMET    = "helmet"
+    SHIELD    = "shield"
+    RING      = "ring"       # items use this; equip() auto-routes to ring_left/ring_right
+    RING_LEFT  = "ring_left"
+    RING_RIGHT = "ring_right"
+    AMULET    = "amulet"
+    BOOTS     = "boots"
+    GLOVES    = "gloves"
 
 
 @dataclass
@@ -201,6 +205,31 @@ ITEM_RING_OF_CLARITY = Item(
     name="Ring of Clarity", kind=ItemKind.ARMOR, glyph="=",
     mp_bonus=5, gold_value=60, equip_slot=EquipSlot.RING,
 )
+ITEM_BOOTS_OF_SPEED = Item(
+    name="Boots of Speed", kind=ItemKind.ARMOR, glyph="[",
+    defense_bonus=0, gold_value=45, equip_slot=EquipSlot.BOOTS,
+)
+ITEM_LEATHER_BOOTS = Item(
+    name="Leather Boots", kind=ItemKind.ARMOR, glyph="[",
+    defense_bonus=1, gold_value=20, equip_slot=EquipSlot.BOOTS,
+)
+ITEM_IRON_BOOTS = Item(
+    name="Iron Boots", kind=ItemKind.ARMOR, glyph="[",
+    defense_bonus=2, gold_value=40, equip_slot=EquipSlot.BOOTS,
+)
+ITEM_LEATHER_GLOVES = Item(
+    name="Leather Gloves", kind=ItemKind.ARMOR, glyph="[",
+    defense_bonus=0, attack_bonus=1, gold_value=18, equip_slot=EquipSlot.GLOVES,
+)
+ITEM_GAUNTLETS = Item(
+    name="Gauntlets", kind=ItemKind.ARMOR, glyph="[",
+    defense_bonus=1, attack_bonus=1, gold_value=50, equip_slot=EquipSlot.GLOVES,
+    warrior_only=True,
+)
+ITEM_THIEF_GLOVES = Item(
+    name="Thief's Gloves", kind=ItemKind.ARMOR, glyph="[",
+    defense_bonus=0, attack_bonus=2, gold_value=60, equip_slot=EquipSlot.GLOVES,
+)
 
 ITEM_HEALTH_POTION = Item(
     name="Health Potion", kind=ItemKind.POTION, glyph="!",
@@ -275,7 +304,13 @@ UNIQUE_HEAVY_WEAPONS = [ITEM_GORECLEAVER]
 COMMON_ARMOR = [ITEM_LEATHER_CAP, ITEM_LEATHER_ARMOR, ITEM_SMALL_SHIELD]
 RARE_ARMOR = [ITEM_CHAIN_MAIL, ITEM_IRON_HELM, ITEM_TOWER_SHIELD]
 
-ACCESSORIES = [ITEM_RING_OF_PROTECTION, ITEM_AMULET_OF_VITALITY, ITEM_RING_OF_CLARITY]
+ACCESSORIES = [
+    ITEM_RING_OF_PROTECTION, ITEM_AMULET_OF_VITALITY, ITEM_RING_OF_CLARITY,
+    ITEM_LEATHER_BOOTS, ITEM_LEATHER_GLOVES,
+]
+RARE_ACCESSORIES = [
+    ITEM_BOOTS_OF_SPEED, ITEM_IRON_BOOTS, ITEM_GAUNTLETS, ITEM_THIEF_GLOVES,
+]
 
 POTIONS = [ITEM_HEALTH_POTION, ITEM_MANA_POTION]
 ELIXIRS = [ITEM_ELIXIR_VITALITY, ITEM_ELIXIR_CLARITY]
@@ -294,11 +329,11 @@ def shop_stock(floor: int) -> list:
     if floor >= 3:
         stock += [ITEM_DAGGER, ITEM_SHORT_SWORD, ITEM_MACE]
     if floor >= 4:
-        stock += [ITEM_LEATHER_ARMOR, ITEM_SMALL_SHIELD, ITEM_IRON_HELM]
+        stock += [ITEM_LEATHER_ARMOR, ITEM_SMALL_SHIELD, ITEM_IRON_HELM, ITEM_LEATHER_BOOTS, ITEM_LEATHER_GLOVES]
     if floor >= 5:
-        stock += [ITEM_BROAD_SWORD, ITEM_LONG_SWORD]
+        stock += [ITEM_BROAD_SWORD, ITEM_LONG_SWORD, ITEM_RING_OF_PROTECTION]
     if floor >= 6:
-        stock += [ITEM_CHAIN_MAIL, ITEM_SCROLL_HEAL, ITEM_SCROLL_INVULNERABILITY]
+        stock += [ITEM_CHAIN_MAIL, ITEM_SCROLL_HEAL, ITEM_SCROLL_INVULNERABILITY, ITEM_IRON_BOOTS, ITEM_GAUNTLETS]
     if floor >= 7:
-        stock += [ITEM_BATTLE_AXE, ITEM_SCROLL_FIREBALL]
+        stock += [ITEM_BATTLE_AXE, ITEM_SCROLL_FIREBALL, ITEM_BOOTS_OF_SPEED, ITEM_THIEF_GLOVES]
     return stock
