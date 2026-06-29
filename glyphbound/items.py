@@ -284,3 +284,21 @@ TREASURE = [ITEM_GEM, ITEM_TORCH, ITEM_RUG]
 GOLD = [ITEM_GOLD_PILE_SMALL, ITEM_GOLD_PILE_MEDIUM, ITEM_GOLD_PILE_LARGE]
 
 SCROLLS = [ITEM_SCROLL_FIREBALL, ITEM_SCROLL_HEAL, ITEM_SCROLL_INVULNERABILITY]
+
+
+def shop_stock(floor: int) -> list:
+    """Return the shop's curated inventory for the given floor depth."""
+    stock = [ITEM_HEALTH_POTION, ITEM_MANA_POTION]
+    if floor >= 2:
+        stock += [ITEM_ELIXIR_VITALITY, ITEM_ELIXIR_CLARITY]
+    if floor >= 3:
+        stock += [ITEM_DAGGER, ITEM_SHORT_SWORD, ITEM_MACE]
+    if floor >= 4:
+        stock += [ITEM_LEATHER_ARMOR, ITEM_SMALL_SHIELD, ITEM_IRON_HELM]
+    if floor >= 5:
+        stock += [ITEM_BROAD_SWORD, ITEM_LONG_SWORD]
+    if floor >= 6:
+        stock += [ITEM_CHAIN_MAIL, ITEM_SCROLL_HEAL, ITEM_SCROLL_INVULNERABILITY]
+    if floor >= 7:
+        stock += [ITEM_BATTLE_AXE, ITEM_SCROLL_FIREBALL]
+    return stock

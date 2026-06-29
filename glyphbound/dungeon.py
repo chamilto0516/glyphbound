@@ -23,6 +23,7 @@ DOOR_CLOSED = 3
 DOOR_OPEN   = 4
 STAIR_DOWN  = 5
 STAIR_UP    = 6
+SHOP        = 7
 
 
 @dataclass
@@ -58,6 +59,7 @@ class Dungeon:
     floor: int = 1
     stair_down_pos: Optional[Tuple[int, int]] = None
     stair_up_pos: Optional[Tuple[int, int]] = None
+    shop_pos: Optional[Tuple[int, int]] = None
     items: Dict[Tuple[int, int], List["Item"]] = field(default_factory=dict)
     monsters: Dict[Tuple[int, int], "Monster"] = field(default_factory=dict)
     traps: Dict[Tuple[int, int], "Trap"] = field(default_factory=dict)
@@ -136,7 +138,7 @@ class Dungeon:
             self.tiles[ny][nx] = DOOR_OPEN
             self.party_x, self.party_y = nx, ny
             return True
-        elif tile in (FLOOR, DOOR_OPEN, STAIR_DOWN, STAIR_UP):
+        elif tile in (FLOOR, DOOR_OPEN, STAIR_DOWN, STAIR_UP, SHOP):
             self.party_x, self.party_y = nx, ny
             return True
         return False
@@ -209,6 +211,20 @@ def generate_dungeon(seed: int = None, theme: "Theme | None" = None, floor: int 
         dungeon.tiles[uy][ux] = STAIR_UP
         dungeon.stair_up_pos = (ux, uy)
     logger.info("Stairs down at %s; up at %s", dungeon.stair_down_pos, dungeon.stair_up_pos)
+
+    # Shop zone — 2×2 tiles in the largest eligible room (not start, not stair room)
+    shop_candidates = [
+        r for r in rooms[1:]
+        if r.center != (dx, dy) and r.w >= 7 and r.h >= 7
+    ]
+    if shop_candidates:
+        shop_room = max(shop_candidates, key=lambda r: r.w * r.h)
+        sx, sy = shop_room.x + 2, shop_room.y + 2
+        for oy in range(2):
+            for ox in range(2):
+                dungeon.tiles[sy + oy][sx + ox] = SHOP
+        dungeon.shop_pos = (sx, sy)
+        logger.info("Shop zone at %s in room %dx%d", dungeon.shop_pos, shop_room.w, shop_room.h)
 
     item_count = 0
     # Note: Starting gear (club, leather cap) now equipped on player by default
@@ -550,6 +566,7 @@ def dump_map_text(dungeon: "Dungeon") -> None:
         DOOR_OPEN:   '-',
         STAIR_DOWN:  '>',
         STAIR_UP:    '<',
+        SHOP:        '$',
     }
     LABELS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 

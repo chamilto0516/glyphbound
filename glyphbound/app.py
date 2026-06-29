@@ -11,7 +11,8 @@ import re
 
 from .combat import apply_spell_to_monster
 from .combat_screen import CombatResult, CombatScreen
-from .dungeon import DOOR_CLOSED, STAIR_DOWN, STAIR_UP, generate_dungeon
+from .dungeon import DOOR_CLOSED, SHOP, STAIR_DOWN, STAIR_UP, generate_dungeon
+from .shop_screen import ShopScreen
 from .items import EquipSlot, Item, ItemKind, HEAVY_WEAPONS, HEAVY_ARMOR, UNIQUE_HEAVY_WEAPONS
 from .map_view import MapView
 from .player import CharacterClass, Player
@@ -285,7 +286,7 @@ class StatsPanel(Static):
         lines = [
             f"[bold yellow]{p.name}[/bold yellow] the {p.char_class.value}",
             f"Lv {p.level}   Floor {self.floor_num}   [yellow]{p.gold}gp[/yellow]",
-            f"HP: [green]{p.hp:>3}[/green]/{max_hp_display:<3}  ATK:{p.attack:<3} DEF:{p.defense}",
+            f"HP: [green]{p.hp:>3}[/green]/{max_hp_display:<3}  Atk/Def: {p.attack}/{p.defense}",
             f"XP: {xp_display}",
         ]
         if p.has_mp:
@@ -710,6 +711,8 @@ class GlyphboundApp(App):
             self._descend()
         elif tile == STAIR_UP:
             self._ascend()
+        elif tile == SHOP:
+            self._enter_shop()
         else:
             # Check for trap trigger on landing tile
             trap = self.dungeon.trap_at(x, y)
@@ -985,3 +988,11 @@ class GlyphboundApp(App):
             self.message_log.add(
                 f"Ascended to floor {self.dungeon.floor}."
             )
+
+    def _enter_shop(self) -> None:
+        self.message_log.add("[bold yellow]You step into the merchant's stall.[/bold yellow]")
+        self.push_screen(ShopScreen(self.player, self.dungeon.floor), callback=self._shop_closed)
+
+    def _shop_closed(self, _result) -> None:
+        self.stats_panel.refresh()
+        self.map_view.refresh()
