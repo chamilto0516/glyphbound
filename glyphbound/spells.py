@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 
+from .fov import SPELL_RADIUS
+
 
 class SpellEffect(Enum):
     DAMAGE      = "damage"      # deals direct damage to target monster
@@ -12,6 +14,7 @@ class SpellEffect(Enum):
     TURN_UNDEAD = "turn_undead" # destroys weak undead, damages strong undead
     DETECT      = "detect"      # reveals items/monsters in nearby rooms
     BLINK       = "blink"       # teleport short distance (escape combat)
+    ILLUMINATE  = "illuminate"  # lights the whole floor for its duration
 
 
 @dataclass
@@ -28,6 +31,7 @@ class Spell:
     atk_count: int    = 1
     heal_sides: int   = 0
     heal_count: int   = 1
+    light_radius: int = 0   # ILLUMINATE: tiles lit for the floor
     description: str  = ""
 
     def damage_label(self) -> str:
@@ -45,6 +49,8 @@ class Spell:
             return "detect"
         if self.effect == SpellEffect.BLINK:
             return "blink"
+        if self.effect == SpellEffect.ILLUMINATE:
+            return "illuminate"
         return ""
 
 
@@ -91,6 +97,15 @@ SPELL_FIREBALL = Spell(
     min_level=2,
     damage_sides=10, damage_count=1,
     description="A burst of fire. 1d10 damage.",
+)
+
+SPELL_ILLUMINATION = Spell(
+    name="Illumination",
+    mp_cost=4,
+    effect=SpellEffect.ILLUMINATE,
+    min_level=2,
+    light_radius=SPELL_RADIUS,
+    description="Conjures magical light that fills the floor.",
 )
 
 SPELL_LIGHTNING_BOLT = Spell(
@@ -144,6 +159,7 @@ WIZARD_SPELLS = [
     SPELL_DETECT_MAGIC,
     SPELL_BLINK,
     SPELL_FIREBALL,
+    SPELL_ILLUMINATION,
     SPELL_LIGHTNING_BOLT,
     SPELL_SHIELD,
     SPELL_METEOR_SWARM,

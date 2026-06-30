@@ -11,6 +11,7 @@ def main():
     parser.add_argument("--seed", type=int, default=None, help="RNG seed for reproducible generation")
     parser.add_argument("--floor", type=int, default=1, help="Floor level to generate (default 1)")
     parser.add_argument("--theme", type=str, default=None, help="Theme name (e.g. Catacombs, Library)")
+    parser.add_argument("--light", action="store_true", help="Reveal the whole map (debug)")
     args = parser.parse_args()
 
     if args.just_map:
@@ -22,7 +23,7 @@ def main():
     setup_logging()
     logging.getLogger("glyphbound").info("=== Glyphbound starting ===")
     from glyphbound.app import GlyphboundApp
-    app = GlyphboundApp()
+    app = GlyphboundApp(reveal_all=args.light)
     app.run()
 
 

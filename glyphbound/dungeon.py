@@ -64,6 +64,30 @@ class Dungeon:
     monsters: Dict[Tuple[int, int], "Monster"] = field(default_factory=dict)
     traps: Dict[Tuple[int, int], "Trap"] = field(default_factory=dict)
 
+    # ── Lighting / field of view (per floor) ─────────────────────────────────
+    ambient_light_radius: int = 0   # set by Scroll/Spell of Illumination; 0 = none
+    explored: Set[Tuple[int, int]] = field(default_factory=set)   # ever seen this floor
+    visible: Set[Tuple[int, int]]  = field(default_factory=set)   # lit right now
+
+    def recompute_visibility(self, light_radius: int, reveal_all: bool = False) -> None:
+        """Recompute the visible set from the party's position.
+
+        `light_radius` is the player's own light reach (base vision plus any
+        equipped light source). It's combined with the floor's ambient light
+        (a scroll or spell of Illumination). When `reveal_all` is set (the
+        --light debug flag) the whole map is treated as visible.
+        """
+        if reveal_all:
+            self.visible = {
+                (x, y) for y in range(self.height) for x in range(self.width)
+            }
+            self.explored |= self.visible
+            return
+        from .fov import compute_fov
+        radius = max(light_radius, self.ambient_light_radius)
+        self.visible = compute_fov(self, self.party_x, self.party_y, radius)
+        self.explored |= self.visible
+
     def tile_at(self, x: int, y: int) -> int:
         if 0 <= x < self.width and 0 <= y < self.height:
             return self.tiles[y][x]
@@ -333,6 +357,10 @@ def generate_dungeon(seed: int = None, theme: "Theme | None" = None, floor: int 
         mx, my = spot
         m = spawner()
         m.spawn_x, m.spawn_y = mx, my
+        # The very first monster of floor 1 always carries a torch.
+        if floor == 1 and monster_count == 0:
+            from .items import ITEM_TORCH
+            m.forced_drops.append(ITEM_TORCH)
         dungeon.place_monster(mx, my, m)
         logger.info("monster %s '%s' hp%d atk%d def%d xp%d at %s",
                     m.name, m.glyph, m.hp, m.attack, m.defense, m.xp_value, (mx, my))

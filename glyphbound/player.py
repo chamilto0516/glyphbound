@@ -137,6 +137,13 @@ class Player:
         return self._base_defense + bonus + self.temp_defense_bonus
 
     @property
+    def light_radius(self) -> int:
+        """The player's own light reach: base vision, or more from a light source."""
+        from .fov import BASE_VISION
+        equipped_light = max((i.light_radius for i in self.equipped.values()), default=0)
+        return max(BASE_VISION, equipped_light)
+
+    @property
     def max_hp_bonus(self) -> int:
         """Bonus max HP from equipped accessories."""
         return sum(i.hp_bonus for i in self.equipped.values() if i.kind != ItemKind.POTION)
@@ -151,11 +158,22 @@ class Player:
     def pick_up(self, item: Item) -> str:
         self.inventory.append(item)
         self.stat_items_found += 1
-        if item.kind == ItemKind.TREASURE and item.gold_value > 0:
-            self.gold += item.gold_value
-            self.stat_gold_collected += item.gold_value
-            self.inventory.remove(item)  # gold goes straight to wallet
-            return f"Picked up {item.name}. (+{item.gold_value} gp)"
+        if item.kind == ItemKind.TREASURE:
+            msgs = []
+            self.inventory.remove(item)  # treasures never sit in inventory
+            if item.gold_value > 0:
+                self.gold += item.gold_value
+                self.stat_gold_collected += item.gold_value
+                msgs.append(f"+{item.gold_value} gp")
+            if item.xp_bonus:
+                self.xp += item.xp_bonus
+                msgs.append(f"+{item.xp_bonus} XP")
+            if item.heal_on_pickup:
+                healed = min(item.heal_on_pickup, self.max_hp - self.hp)
+                self.hp += healed
+                msgs.append(f"+{healed} HP")
+            suffix = f" ({', '.join(msgs)})" if msgs else ""
+            return f"Picked up {item.name}.{suffix}"
         return f"Picked up {item.name}."
 
     def equip(self, item: Item) -> Tuple[str, Optional[Item]]:
@@ -236,6 +254,9 @@ class Player:
             restored = min(item.mp_bonus, self.max_mp - self.mp)
             self.mp += restored
             msgs.append(f"+{restored} MP")
+        if item.xp_bonus:
+            self.xp += item.xp_bonus
+            msgs.append(f"+{item.xp_bonus} XP")
         return f"Drank {item.name}. " + ("  ".join(msgs) if msgs else "No effect.")
 
     # ── Spells ─────────────────────────────────────────────────────────────────
@@ -272,6 +293,8 @@ class Player:
             return f"You invoke {spell.name}!", 0
         if spell.effect == SpellEffect.DETECT:
             return f"You cast {spell.name}.", -1  # -1 signals caller to run detect sweep
+        if spell.effect == SpellEffect.ILLUMINATE:
+            return f"You cast {spell.name}! Light fills the floor.", -2  # -2 signals caller to light the floor
         if spell.effect == SpellEffect.BLINK:
             return f"You cast {spell.name}. (Blink not yet implemented.)", 0
         return f"Cast {spell.name}.", 0
@@ -350,6 +373,9 @@ class Player:
         if item.invuln_turns:
             self.invuln_turns_remaining += item.invuln_turns
             return f"You read {item.name}! Invulnerable for {item.invuln_turns} rounds!", 0
+        if item.light_radius:
+            # Caller reads light_radius off the item to light the floor.
+            return f"You read {item.name}! Light floods the floor.", 0
         if item.hp_bonus:
             healed = min(item.hp_bonus, self.max_hp - self.hp)
             self.hp += healed

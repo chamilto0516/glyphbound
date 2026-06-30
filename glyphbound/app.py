@@ -709,10 +709,19 @@ class GlyphboundApp(App):
 
     FLEE_FREEZE_TURNS = 3   # turns engaged monsters are stunned after a successful flee
 
+    TORCH_BURNOUT_DAMAGE = 30   # damage in one combat past which a torch may gutter out
+    TORCH_BURNOUT_CHANCE = 0.50
+
+    def __init__(self, reveal_all: bool = False) -> None:
+        super().__init__()
+        self.reveal_all = reveal_all   # --light debug flag
+        self._combat_damage_taken = 0  # damage accumulated in the current engagement
+        self._torch_at_risk = True     # re-armed each combat; one burnout roll per combat
+
     def compose(self) -> ComposeResult:
         self.dungeon = generate_dungeon(floor=1, place_up_stair=False)
         self.player: Player | None = None
-        self.map_view = MapView(self.dungeon)
+        self.map_view = MapView(self.dungeon, reveal_all=self.reveal_all)
         self.stats_panel = StatsPanel()
         self.message_log = MessageLog()
 
@@ -742,6 +751,7 @@ class GlyphboundApp(App):
             f"{name} the {char_class.value} descends into the {self.dungeon.theme.name}."
         )
         self.stats_panel.refresh()
+        self.map_view.refresh()
         self._refresh_action_bar()
 
     def _update_title(self) -> None:
@@ -805,6 +815,7 @@ class GlyphboundApp(App):
                 msg = self.player.pick_up(item)
                 self.dungeon.remove_item(x, y, item)
                 self.message_log.add(msg)
+                self._check_pickup_levelup()
             # The world takes its turn (monsters act, buffs decay, death checked)
             self._resolve_turn()
 
@@ -924,6 +935,13 @@ class GlyphboundApp(App):
         if loot:
             self.message_log.add(f"  {monster.name} dropped: {', '.join(i.name for i in loot)}")
 
+    def _check_pickup_levelup(self) -> None:
+        """Log any level-up that resulted from XP gained via pickup or potion."""
+        leveled, msgs = self.player.check_level_up()
+        if leveled:
+            for line in msgs:
+                self.message_log.add(line)
+
     def _resolve_turn(self) -> None:
         """Advance the world one turn after a turn-consuming player action.
 
@@ -935,11 +953,37 @@ class GlyphboundApp(App):
             return
         self._monster_turns()
         self._decay_combat_buffs()
+        self._check_torch_burnout()
         self.stats_panel.refresh()
         self.map_view.refresh()
         self._refresh_action_bar()
         if self.player.hp == 0:
             self._player_died()
+
+    def _check_torch_burnout(self) -> None:
+        """A torch may gutter out after the player takes heavy damage in a fight.
+
+        Damage accumulates across the engagement; once it crosses the
+        threshold a single chance is rolled. When combat ends the tally and
+        the roll re-arm for the next fight.
+        """
+        if not self._in_combat():
+            self._combat_damage_taken = 0
+            self._torch_at_risk = True
+            return
+        if not self._torch_at_risk:
+            return
+        if self._combat_damage_taken <= self.TORCH_BURNOUT_DAMAGE:
+            return
+        self._torch_at_risk = False  # only one roll per combat
+        torch = self.player.equipped.get(EquipSlot.SHIELD.value)
+        if torch is None or torch.light_radius <= 0 or torch.name != "Torch":
+            return
+        if random.random() < self.TORCH_BURNOUT_CHANCE:
+            del self.player.equipped[EquipSlot.SHIELD.value]
+            self.message_log.add(
+                "[bold yellow]Your torch sputters and dies in the chaos![/bold yellow]"
+            )
 
     def _in_combat(self) -> bool:
         """True if any monster is within its chase range of the player (engaged)."""
@@ -984,8 +1028,10 @@ class GlyphboundApp(App):
         """A single monster attacks the player. Logs only; death handled by caller."""
         from .combat import execute_monster_attack
 
+        hp_before = self.player.hp
         for line in execute_monster_attack(self.player, monster):
             self.message_log.add(line)
+        self._combat_damage_taken += max(0, hp_before - self.player.hp)
 
     # ── Action bar ───────────────────────────────────────────────────────────
 
@@ -1083,6 +1129,7 @@ class GlyphboundApp(App):
             msg = self.player.pick_up(item)
             self.dungeon.remove_item(x, y, item)
             self.message_log.add(msg)
+            self._check_pickup_levelup()
         self.stats_panel.refresh()
         self.map_view.refresh()
         self._refresh_action_bar()
@@ -1143,6 +1190,10 @@ class GlyphboundApp(App):
             self.message_log.add(msg)
             if sentinel == -1:
                 self._detect_magic_traps()
+            elif sentinel == -2:
+                self.dungeon.ambient_light_radius = max(
+                    self.dungeon.ambient_light_radius, spell.light_radius
+                )
 
         self._resolve_turn()
 
@@ -1158,6 +1209,7 @@ class GlyphboundApp(App):
         if item is None:
             return  # cancelled — no turn consumed
         self.message_log.add(self.player.use_potion(item))
+        self._check_pickup_levelup()
         self._resolve_turn()
 
     def action_scroll(self) -> None:
@@ -1171,8 +1223,13 @@ class GlyphboundApp(App):
     def _scroll_chosen(self, item: Item | None) -> None:
         if item is None:
             return  # cancelled — no turn consumed
+        scroll_light = item.light_radius
         msg, fireball_dmg = self.player.use_scroll(item)
         self.message_log.add(msg)
+        if scroll_light:
+            self.dungeon.ambient_light_radius = max(
+                self.dungeon.ambient_light_radius, scroll_light
+            )
         if fireball_dmg:
             nearest = self.dungeon.nearest_monster()
             if nearest is not None:

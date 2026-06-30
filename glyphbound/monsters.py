@@ -65,10 +65,11 @@ class Monster:
     chase_range: int = 8
     guard_range: int = 5
     frozen_turns: int = 0   # >0: skips its AI turn (e.g. after the player flees)
+    forced_drops: List[Item] = field(default_factory=list)  # guaranteed drops (e.g. floor-1 torch)
 
     def drop_loot(self) -> List[Item]:
         """Generate random loot on death."""
-        loot: List[Item] = []
+        loot: List[Item] = list(self.forced_drops)
         k = self.kind
 
         if k == MonsterKind.GOBLIN:

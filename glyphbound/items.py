@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 
+from .fov import TORCH_RADIUS, SCROLL_RADIUS
+
 
 class ItemKind(Enum):
     WEAPON   = "Weapon"
@@ -41,6 +43,9 @@ class Item:
     is_unique: bool     = False  # named/special items
     warrior_only: bool  = False  # requires Warrior class to equip
     invuln_turns: int   = 0     # scrolls: rounds of invulnerability granted
+    light_radius: int   = 0     # >0: emits light when equipped (or, for scrolls, when read)
+    xp_bonus: int       = 0     # potions: XP granted on use; treasures: XP granted on pickup
+    heal_on_pickup: int = 0     # treasure: HP restored immediately when stepped on
 
     def __str__(self) -> str:
         parts = [self.name]
@@ -248,6 +253,10 @@ ITEM_ELIXIR_CLARITY = Item(
     name="Elixir of Clarity", kind=ItemKind.POTION, glyph="!",
     mp_bonus=999, gold_value=80,   # use_potion caps at max_mp
 )
+ITEM_POTION_OF_KNOWLEDGE = Item(
+    name="Potion of Knowledge", kind=ItemKind.POTION, glyph="!",
+    xp_bonus=10, gold_value=35,
+)
 
 ITEM_GOLD_PILE_SMALL = Item(
     name="Gold Coins", kind=ItemKind.TREASURE, glyph="$",
@@ -266,12 +275,38 @@ ITEM_GEM = Item(
     gold_value=50,
 )
 ITEM_TORCH = Item(
-    name="Torch", kind=ItemKind.TREASURE, glyph="i",
-    gold_value=3,
+    name="Torch", kind=ItemKind.WEAPON, glyph="i",
+    gold_value=10, equip_slot=EquipSlot.SHIELD,   # held in the off-hand
+    damage_sides=0, damage_count=1,               # a feeble 1 damage if swung
+    light_radius=TORCH_RADIUS,
 )
 ITEM_RUG = Item(
     name="Ornate Rug", kind=ItemKind.TREASURE, glyph="~",
     gold_value=15,
+)
+ITEM_ANCIENT_TOME = Item(
+    name="Ancient Tome", kind=ItemKind.TREASURE, glyph="%",
+    gold_value=40,
+)
+ITEM_IDOL = Item(
+    name="Idol", kind=ItemKind.TREASURE, glyph="&",
+    gold_value=60,
+)
+ITEM_SILVER_CANDLESTICK = Item(
+    name="Silver Candlestick", kind=ItemKind.TREASURE, glyph="|",
+    gold_value=20,
+)
+ITEM_INK_VIAL = Item(
+    name="Ink Vial", kind=ItemKind.TREASURE, glyph="~",
+    gold_value=35,
+)
+ITEM_CRACKED_RUNE_FRAGMENT = Item(
+    name="Cracked Rune Fragment", kind=ItemKind.TREASURE, glyph="§",
+    gold_value=0, xp_bonus=5,
+)
+ITEM_BLESSED_CHALICE = Item(
+    name="Blessed Chalice", kind=ItemKind.TREASURE, glyph="Y",
+    gold_value=15, heal_on_pickup=5,
 )
 
 # ── Scrolls ────────────────────────────────────────────────────────────────────
@@ -289,6 +324,29 @@ ITEM_SCROLL_INVULNERABILITY = Item(
     name="Scroll of Invulnerability", kind=ItemKind.SCROLL, glyph="?",
     gold_value=60,
     invuln_turns=3,                   # immune to attacks for 3 rounds
+)
+ITEM_SCROLL_ILLUMINATION = Item(
+    name="Scroll of Illumination", kind=ItemKind.SCROLL, glyph="?",
+    gold_value=45,
+    light_radius=SCROLL_RADIUS,       # lights the floor; no hand needed
+)
+
+# ── Magic light items (light without giving up a hand) ──────────────────────────
+ITEM_SUNBLADE = Item(
+    name="Sunblade", kind=ItemKind.WEAPON, glyph="/",
+    attack_bonus=4, gold_value=180, equip_slot=EquipSlot.WEAPON,
+    damage_sides=8, damage_count=1,   # 1d8
+    is_unique=True, light_radius=8,
+)
+ITEM_AEGIS_OF_DAWN = Item(
+    name="Aegis of Dawn", kind=ItemKind.ARMOR, glyph="]",
+    defense_bonus=3, gold_value=160, equip_slot=EquipSlot.SHIELD,
+    is_unique=True, light_radius=8,
+)
+ITEM_STARLIT_HELM = Item(
+    name="Starlit Helm", kind=ItemKind.ARMOR, glyph="]",
+    defense_bonus=2, gold_value=150, equip_slot=EquipSlot.HELMET,
+    is_unique=True, light_radius=10,
 )
 
 # ── Loot Pools ─────────────────────────────────────────────────────────────────
@@ -312,18 +370,23 @@ RARE_ACCESSORIES = [
     ITEM_BOOTS_OF_SPEED, ITEM_IRON_BOOTS, ITEM_GAUNTLETS, ITEM_THIEF_GLOVES,
 ]
 
-POTIONS = [ITEM_HEALTH_POTION, ITEM_MANA_POTION]
+POTIONS = [ITEM_HEALTH_POTION, ITEM_MANA_POTION, ITEM_POTION_OF_KNOWLEDGE]
 ELIXIRS = [ITEM_ELIXIR_VITALITY, ITEM_ELIXIR_CLARITY]
 
-TREASURE = [ITEM_GEM, ITEM_TORCH, ITEM_RUG]
+TREASURE = [
+    ITEM_GEM, ITEM_RUG,
+    ITEM_ANCIENT_TOME, ITEM_IDOL, ITEM_SILVER_CANDLESTICK, ITEM_INK_VIAL,
+    ITEM_CRACKED_RUNE_FRAGMENT, ITEM_BLESSED_CHALICE,
+]
 GOLD = [ITEM_GOLD_PILE_SMALL, ITEM_GOLD_PILE_MEDIUM, ITEM_GOLD_PILE_LARGE]
 
-SCROLLS = [ITEM_SCROLL_FIREBALL, ITEM_SCROLL_HEAL, ITEM_SCROLL_INVULNERABILITY]
+SCROLLS = [ITEM_SCROLL_FIREBALL, ITEM_SCROLL_HEAL, ITEM_SCROLL_INVULNERABILITY, ITEM_SCROLL_ILLUMINATION]
 
 
 def shop_stock(floor: int) -> list:
     """Return the shop's curated inventory for the given floor depth."""
-    stock = [ITEM_HEALTH_POTION, ITEM_MANA_POTION]
+    # A torch and a scroll of illumination are always for sale — light is a staple.
+    stock = [ITEM_HEALTH_POTION, ITEM_MANA_POTION, ITEM_TORCH, ITEM_SCROLL_ILLUMINATION]
     if floor >= 2:
         stock += [ITEM_ELIXIR_VITALITY, ITEM_ELIXIR_CLARITY]
     if floor >= 3:

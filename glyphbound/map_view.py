@@ -6,12 +6,39 @@ from textual.widget import Widget
 from .dungeon import Dungeon
 from .themes import PARTY_GLYPH
 
+_BLANK_STYLE = RichStyle(color="black")
+
 
 class MapView(Widget):
 
-    def __init__(self, dungeon: Dungeon) -> None:
+    def __init__(self, dungeon: Dungeon, reveal_all: bool = False) -> None:
         super().__init__()
         self.dungeon = dungeon
+        self.reveal_all = reveal_all   # --light debug flag: show the whole map
+        self._dim_cache: dict = {}
+
+    def _dim(self, style: RichStyle) -> RichStyle:
+        """A dimmed variant of a tile style for explored-but-unseen terrain."""
+        cached = self._dim_cache.get(style)
+        if cached is None:
+            cached = style + RichStyle(dim=True, bold=False)
+            self._dim_cache[style] = cached
+        return cached
+
+    def refresh(self, *args, **kwargs):
+        """Recompute the field of view before every repaint.
+
+        Every game-state change already calls map_view.refresh(), so this is
+        the single place that keeps the visible/explored sets current.
+        """
+        dungeon = getattr(self, "dungeon", None)
+        if dungeon is not None and dungeon.theme is not None:
+            from .player import Player  # local import avoids a cycle
+            app = self.app if self.is_mounted else None
+            player = getattr(app, "player", None) if app else None
+            light = player.light_radius if isinstance(player, Player) else 5
+            dungeon.recompute_visibility(light, reveal_all=self.reveal_all)
+        return super().refresh(*args, **kwargs)
 
     def render_line(self, y: int) -> Strip:
         width  = self.size.width
@@ -29,6 +56,21 @@ class MapView(Widget):
         segments = []
         for col in range(width):
             mx = vx + col
+            lit       = (mx, my) in dungeon.visible
+            explored  = (mx, my) in dungeon.explored
+
+            if not lit and not explored:
+                # Never seen — blank darkness.
+                segments.append(Segment(" ", _BLANK_STYLE))
+                continue
+
+            if not lit:
+                # Explored but dark: terrain memory only, no monsters/items.
+                tile = dungeon.tile_at(mx, my)
+                segments.append(Segment(theme.glyphs[tile], self._dim(theme.tile_styles[tile])))
+                continue
+
+            # Fully lit — full detail.
             if mx == dungeon.party_x and my == dungeon.party_y:
                 segments.append(Segment(PARTY_GLYPH, theme.party_style))
             else:
