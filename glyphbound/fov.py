@@ -15,10 +15,10 @@ from typing import TYPE_CHECKING, Set, Tuple
 if TYPE_CHECKING:
     from .dungeon import Dungeon
 
-from .dungeon import WALL, DOOR_CLOSED
+from .dungeon import VOID, WALL, DOOR_CLOSED
 
 # Light radii (Manhattan-ish Euclidean tiles). Tuned to keep the dungeon dark.
-BASE_VISION   = 5
+BASE_VISION   = 3
 TORCH_RADIUS  = 12
 SCROLL_RADIUS = 18
 SPELL_RADIUS  = 15
@@ -33,7 +33,7 @@ _OCTANTS = [
 
 
 def _blocks_sight(dungeon: "Dungeon", x: int, y: int) -> bool:
-    return dungeon.tile_at(x, y) in (WALL, DOOR_CLOSED)
+    return dungeon.tile_at(x, y) in (VOID, WALL, DOOR_CLOSED)
 
 
 def compute_fov(dungeon: "Dungeon", ox: int, oy: int, radius: int) -> Set[Tuple[int, int]]:

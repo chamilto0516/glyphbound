@@ -225,6 +225,9 @@ class Player:
         item = self.equipped.pop(slot.value, None)
         if item is None:
             return "Nothing equipped there."
+        # A lit torch is spent — it doesn't return to inventory.
+        if item.light_radius > 0 and item.name == "Torch":
+            return "You extinguish the torch. It crumbles to ash."
         self.inventory.append(item)
         return f"Unequipped {item.name}."
 

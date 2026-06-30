@@ -6,7 +6,7 @@ from textual.widget import Widget
 from .dungeon import Dungeon
 from .themes import PARTY_GLYPH
 
-_BLANK_STYLE = RichStyle(color="black")
+_BLANK_STYLE = RichStyle(color="grey11", bgcolor="grey11")
 
 
 class MapView(Widget):
@@ -60,7 +60,7 @@ class MapView(Widget):
             explored  = (mx, my) in dungeon.explored
 
             if not lit and not explored:
-                # Never seen — blank darkness.
+                # Never seen — dark grey void.
                 segments.append(Segment(" ", _BLANK_STYLE))
                 continue
 

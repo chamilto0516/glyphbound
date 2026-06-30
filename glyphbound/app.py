@@ -19,6 +19,15 @@ from .shop_screen import ShopScreen
 from .items import EquipSlot, Item, ItemKind, HEAVY_WEAPONS, HEAVY_ARMOR, UNIQUE_HEAVY_WEAPONS
 from .player import slot_label as _slot_label
 from .map_view import MapView
+
+
+def _item_label(item: "Item | None", *, lit: bool = False) -> str:
+    """Display name for an equipped item. Torches show '(lit)' while equipped."""
+    if item is None:
+        return "—"
+    if lit and item.name == "Torch":
+        return "Torch (lit)"
+    return item.name
 from .player import CharacterClass, Player
 from .spells import Spell, SpellEffect
 from .traps import Trap
@@ -315,10 +324,10 @@ class StatsPanel(Static):
         boots     = p.equipped.get(EquipSlot.BOOTS.value)
         gloves    = p.equipped.get(EquipSlot.GLOVES.value)
         off_label = "2H" if p.is_dual_wielding else "S"
-        lines.append(f"[dim]W:[/dim]{weapon.name if weapon else '—':<14} [dim]H:[/dim]{helmet.name if helmet else '—'}")
-        lines.append(f"[dim]A:[/dim]{armor.name  if armor  else '—':<14} [dim]{off_label}:[/dim]{shield.name if shield else '—'}")
-        lines.append(f"[dim]RL:[/dim]{ring_l.name if ring_l else '—':<13} [dim]RR:[/dim]{ring_r.name if ring_r else '—'}")
-        lines.append(f"[dim]N:[/dim]{amulet.name if amulet else '—':<14} [dim]B:[/dim]{boots.name if boots else '—'}")
+        lines.append(f"[dim]W:[/dim]{_item_label(weapon):<14} [dim]H:[/dim]{_item_label(helmet)}")
+        lines.append(f"[dim]A:[/dim]{_item_label(armor):<14} [dim]{off_label}:[/dim]{_item_label(shield, lit=True)}")
+        lines.append(f"[dim]RL:[/dim]{_item_label(ring_l):<13} [dim]RR:[/dim]{_item_label(ring_r)}")
+        lines.append(f"[dim]N:[/dim]{_item_label(amulet):<14} [dim]B:[/dim]{_item_label(boots)}")
         if gloves:
             lines.append(f"[dim]G:[/dim]{gloves.name}")
         return "\n".join(lines)
@@ -477,7 +486,8 @@ class InventoryScreen(Screen):
             eq_lines = []
             for idx, (it, sl) in enumerate(equipped_items):
                 flat_idx = idx
-                label = f"[bold green]{_slot_label(sl):>10}[/bold green]  {it}"
+                display = _item_label(it, lit=(sl == EquipSlot.SHIELD.value))
+                label = f"[bold green]{_slot_label(sl):>10}[/bold green]  {display}"
                 if flat_idx == self._selected:
                     eq_lines.append(f"[bold ansi_bright_yellow]> {label}[/bold ansi_bright_yellow]")
                 else:
