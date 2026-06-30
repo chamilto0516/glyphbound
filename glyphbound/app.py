@@ -357,6 +357,11 @@ class MessageLog(RichLog):
 # ── Inventory screen ──────────────────────────────────────────────────────────
 
 class InventoryScreen(Screen):
+    BINDINGS = [("i", "dismiss_inv", "Close inventory")]
+
+    def action_dismiss_inv(self) -> None:
+        self.dismiss(self._last_msg)
+
     CSS = """
     InventoryScreen {
         background: black;
