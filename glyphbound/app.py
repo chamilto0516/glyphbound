@@ -143,12 +143,22 @@ class DeathScreen(Screen):
         color: #555555;
         margin-top: 1;
     }
+
+    #death-log-header {
+        color: #888888;
+        margin-top: 1;
+    }
+
+    .death-log-line {
+        color: #cc4444;
+    }
     """
 
-    def __init__(self, player: "Player", floor: int) -> None:
+    def __init__(self, player: "Player", floor: int, last_msgs: list = None) -> None:
         super().__init__()
-        self.player = player
-        self.floor  = floor
+        self.player    = player
+        self.floor     = floor
+        self.last_msgs = last_msgs or []
 
     def compose(self) -> ComposeResult:
         p = self.player
@@ -169,6 +179,10 @@ class DeathScreen(Screen):
             yield Static(f"  Items found        {p.stat_items_found}",                classes="stat-row")
             yield Static(f"  MP spent           {p.stat_mp_spent}",                   classes="stat-row")
             yield Static("[dim]────────────────────────────────────────────────────[/dim]", id="death-sep2")
+            if self.last_msgs:
+                yield Static("  Last messages:", id="death-log-header")
+                for line in self.last_msgs:
+                    yield Static(f"  {line}", classes="death-log-line")
             yield Static("Press Q to quit  or  R to restart", id="death-hint")
 
     def on_key(self, event) -> None:
@@ -296,10 +310,12 @@ class StatsPanel(Static):
         max_hp_display = f"{p.max_hp + p.max_hp_bonus}"
         max_mp_display = f"{p.max_mp + p.max_mp_bonus}"
 
+        max_hp_total = p.max_hp + p.max_hp_bonus
+        hp_color = "bold bright_red" if p.hp <= max_hp_total * 0.25 else "bold bright_white"
         lines = [
             f"[bold yellow]{p.name}[/bold yellow] the {p.char_class.value}",
             f"Lv {p.level}   Floor {self.floor_num}   [yellow]{p.gold}gp[/yellow]",
-            f"HP: [green]{p.hp:>3}[/green]/{max_hp_display:<3}  Atk/Def: {p.attack}/{p.defense}",
+            f"HP: [{hp_color}]{p.hp:>3}[/{hp_color}]/{max_hp_display:<3}  Atk/Def: {p.attack}/{p.defense}",
             f"XP: {xp_display}",
         ]
         if p.has_mp:
@@ -348,20 +364,20 @@ class MessageLog(RichLog):
 
     def __init__(self) -> None:
         super().__init__(max_lines=100, markup=True, auto_scroll=True)
+        self._history: list[str] = []
 
     def add(self, msg: str) -> None:
         self.write(msg)
+        self._history.append(_strip_markup(msg))
         self._logger.info(_strip_markup(msg))
+
+    def last_lines(self, n: int = 5) -> list[str]:
+        return self._history[-n:]
 
 
 # ── Inventory screen ──────────────────────────────────────────────────────────
 
 class InventoryScreen(Screen):
-    BINDINGS = [("i", "dismiss_inv", "Close inventory")]
-
-    def action_dismiss_inv(self) -> None:
-        self.dismiss(self._last_msg)
-
     CSS = """
     InventoryScreen {
         background: black;
@@ -459,7 +475,7 @@ class InventoryScreen(Screen):
                 "[bold](E)[/bold]quip/Remove   "
                 "[bold](U)[/bold]se   "
                 "[bold](D)[/bold]rop   "
-                "[bold](I)[/bold] close",
+                "[dim]Esc[/dim] close",
                 id="inv-hint",
             )
             yield Static("── Equipped ─────────────────────────────────────", id="inv-equipped-header")
@@ -535,7 +551,7 @@ class InventoryScreen(Screen):
     def on_key(self, event) -> None:
         items = self._flat_items()
 
-        if event.key in ("escape", "i"):
+        if event.key == "escape":
             self.dismiss(self._last_msg)
             return
 
@@ -1106,8 +1122,9 @@ class GlyphboundApp(App):
 
     def _player_died(self) -> None:
         self.message_log.add("── YOU HAVE DIED ──")
+        last_msgs = self.message_log.last_lines(5)
         self.push_screen(
-            DeathScreen(self.player, self.dungeon.floor),
+            DeathScreen(self.player, self.dungeon.floor, last_msgs),
             callback=self._death_dismissed,
         )
 
