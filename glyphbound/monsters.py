@@ -64,6 +64,7 @@ class Monster:
     spawn_y: int = 0
     chase_range: int = 8
     guard_range: int = 5
+    frozen_turns: int = 0   # >0: skips its AI turn (e.g. after the player flees)
 
     def drop_loot(self) -> List[Item]:
         """Generate random loot on death."""

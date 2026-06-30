@@ -72,6 +72,31 @@ class Dungeon:
     def place_item(self, x: int, y: int, item: "Item") -> None:
         self.items.setdefault((x, y), []).append(item)
 
+    def can_hold_item(self, x: int, y: int) -> bool:
+        """True if (x, y) is a plain walkable floor tile — never stairs/shop/doors.
+
+        Items must never land on stairs (you'd descend instead of picking them
+        up) or on the shop. Open floor only.
+        """
+        return self.tile_at(x, y) == FLOOR
+
+    def find_item_tile(self, cx: int, cy: int, radius: int = 3) -> Optional[Tuple[int, int]]:
+        """Find an open floor tile near (cx, cy) suitable for an item.
+
+        Searches outward in rings from the center. Skips stairs, the shop,
+        doors, walls, and tiles already holding an item. Returns None if no
+        spot is found within `radius`.
+        """
+        for r in range(radius + 1):
+            for oy in range(-r, r + 1):
+                for ox in range(-r, r + 1):
+                    if max(abs(ox), abs(oy)) != r:
+                        continue  # only the current ring's perimeter
+                    tx, ty = cx + ox, cy + oy
+                    if self.can_hold_item(tx, ty) and (tx, ty) not in self.items:
+                        return (tx, ty)
+        return None
+
     def items_at(self, x: int, y: int) -> List["Item"]:
         return self.items.get((x, y), [])
 
@@ -87,6 +112,25 @@ class Dungeon:
 
     def place_monster(self, x: int, y: int, monster: "Monster") -> None:
         self.monsters[(x, y)] = monster
+
+    def find_spawn_tile(self, cx: int, cy: int, radius: int = 4) -> Optional[Tuple[int, int]]:
+        """Find an open floor tile near (cx, cy) for a monster.
+
+        Skips stairs, shop, doors, walls, tiles holding another monster, and
+        the player's start. Searches outward in rings. Returns None if no spot
+        is found within `radius`.
+        """
+        for r in range(radius + 1):
+            for oy in range(-r, r + 1):
+                for ox in range(-r, r + 1):
+                    if max(abs(ox), abs(oy)) != r:
+                        continue  # only this ring's perimeter
+                    tx, ty = cx + ox, cy + oy
+                    if (self.tile_at(tx, ty) == FLOOR
+                            and (tx, ty) not in self.monsters
+                            and (tx, ty) != (self.party_x, self.party_y)):
+                        return (tx, ty)
+        return None
 
     def monster_at(self, x: int, y: int) -> "Monster | None":
         return self.monsters.get((x, y))
@@ -233,9 +277,12 @@ def generate_dungeon(seed: int = None, theme: "Theme | None" = None, floor: int 
     from .items import ITEM_ELIXIR_VITALITY, ITEM_ELIXIR_CLARITY
     elixir_rooms = rng.sample(rooms[1:], min(2, len(rooms) - 1))
     for room, elixir in zip(elixir_rooms, [ITEM_ELIXIR_VITALITY, ITEM_ELIXIR_CLARITY]):
-        ex, ey = room.center
-        dungeon.place_item(ex, ey, elixir)
-        logger.info("item %s (%s) at %s", elixir.name, elixir.kind.value, (ex, ey))
+        cx, cy = room.center
+        spot = dungeon.find_item_tile(cx, cy)
+        if spot is None:
+            continue  # no open tile (e.g. stair room) — skip rather than overlap
+        dungeon.place_item(*spot, elixir)
+        logger.info("item %s (%s) at %s", elixir.name, elixir.kind.value, spot)
         item_count += 1
 
     # Place random loot: potions, gold, weapons in remaining rooms
@@ -245,8 +292,8 @@ def generate_dungeon(seed: int = None, theme: "Theme | None" = None, floor: int 
     from .monsters import ALL_SPAWNERS
     eligible = [s for s in ALL_SPAWNERS if s().min_floor <= floor]
 
-    # Monster count: 3 on floor 1, +1 every floor, capped at 12
-    target_monsters = min(3 + (floor - 1), 12)
+    # Monster count: 6 on floor 1, +2 every floor, capped at 24.
+    target_monsters = min(6 + (floor - 1) * 2, 24)
 
     candidate_rooms = [
         r for r in rooms[1:]
@@ -257,7 +304,8 @@ def generate_dungeon(seed: int = None, theme: "Theme | None" = None, floor: int 
         key=lambda r: abs(r.center[0] - start_cx) + abs(r.center[1] - start_cy)
     )
     monster_count = 0
-    used_rooms: set = set()
+    # Round-robin across rooms so monsters spread out; multiple per room is fine.
+    room_cursor = 0
     for _ in range(target_monsters):
         if not candidate_rooms:
             break
@@ -265,17 +313,24 @@ def generate_dungeon(seed: int = None, theme: "Theme | None" = None, floor: int 
         if len(eligible) == 1:
             spawner = eligible[0]
         else:
-            # Weight: monsters in the top half of the eligible list get 3x weight on deeper floors
+            # Weight: monsters in the top half of the eligible list get more
+            # weight on deeper floors.
             mid = len(eligible) // 2
             weights = [1] * mid + [1 + (floor // 2)] * (len(eligible) - mid)
             spawner = rng.choices(eligible, weights=weights, k=1)[0]
 
-        # Prefer an unused room; fall back to any if all used
-        unused = [r for r in candidate_rooms if id(r) not in used_rooms]
-        room = rng.choice(unused if unused else candidate_rooms)
-        used_rooms.add(id(room))
+        # Cycle through rooms; find an open tile near the room's center.
+        spot = None
+        for _attempt in range(len(candidate_rooms)):
+            room = candidate_rooms[room_cursor % len(candidate_rooms)]
+            room_cursor += 1
+            spot = dungeon.find_spawn_tile(*room.center)
+            if spot is not None:
+                break
+        if spot is None:
+            continue  # no open tile anywhere — give up on this monster
 
-        mx, my = room.center
+        mx, my = spot
         m = spawner()
         m.spawn_x, m.spawn_y = mx, my
         dungeon.place_monster(mx, my, m)
@@ -499,14 +554,13 @@ def _place_random_loot(dungeon: Dungeon, rooms: List[Room], rng: random.Random, 
             else:
                 item = rng.choice(COMMON_WEAPONS)  # fallback
 
-        # Place slightly offset from center to avoid overlap with monsters/stairs
+        # Find an open floor tile near the room center — never on stairs/shop.
         cx, cy = room.center
-        dx = rng.choice([-1, 0, 1])
-        dy = rng.choice([-1, 0, 1])
-        loot_x, loot_y = cx + dx, cy + dy
-
-        dungeon.place_item(loot_x, loot_y, item)
-        logger.info("loot %s (%s) at %s", item.name, item.kind.value, (loot_x, loot_y))
+        spot = dungeon.find_item_tile(cx, cy)
+        if spot is None:
+            continue  # no eligible tile in this room — skip it
+        dungeon.place_item(*spot, item)
+        logger.info("loot %s (%s) at %s", item.name, item.kind.value, spot)
         placed += 1
 
     return placed

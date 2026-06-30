@@ -10,8 +10,11 @@ import random
 import re
 
 from .combat import apply_spell_to_monster
-from .combat_screen import CombatResult, CombatScreen
-from .dungeon import DOOR_CLOSED, SHOP, STAIR_DOWN, STAIR_UP, generate_dungeon
+from .combat_screen import (
+    PotionSelectScreen,
+    ScrollSelectScreen,
+)
+from .dungeon import DOOR_CLOSED, SHOP, STAIR_DOWN, generate_dungeon
 from .shop_screen import ShopScreen
 from .items import EquipSlot, Item, ItemKind, HEAVY_WEAPONS, HEAVY_ARMOR, UNIQUE_HEAVY_WEAPONS
 from .player import slot_label as _slot_label
@@ -673,6 +676,15 @@ class GlyphboundApp(App):
         padding: 0 1;
         color: white;
     }
+
+    #action-bar {
+        width: 100%;
+        height: 4;
+        background: #111111;
+        color: white;
+        padding: 0 1;
+        border: round #6e6e6e;
+    }
     """
 
     BINDINGS = [
@@ -683,15 +695,22 @@ class GlyphboundApp(App):
         ("g", "get_item",        "Get item"),
         ("i", "inventory",       "Inventory"),
         ("z", "spells",          "Spells"),
+        ("r", "rage",            "Rage"),
+        ("p", "potion",          "Potion"),
+        ("c", "scroll",          "Scroll"),
+        ("f", "flee",            "Flee"),
         ("x", "disarm_trap",     "Disarm trap"),
+        ("k", "scroll_log_up",   "Scroll log up"),
+        ("j", "scroll_log_down", "Scroll log down"),
         ("pageup",   "scroll_log_up",   "Scroll log up"),
         ("pagedown", "scroll_log_down", "Scroll log down"),
         ("q", "quit",            "Quit"),
     ]
 
+    FLEE_FREEZE_TURNS = 3   # turns engaged monsters are stunned after a successful flee
+
     def compose(self) -> ComposeResult:
         self.dungeon = generate_dungeon(floor=1, place_up_stair=False)
-        self._floor_stack: list = []
         self.player: Player | None = None
         self.map_view = MapView(self.dungeon)
         self.stats_panel = StatsPanel()
@@ -702,6 +721,9 @@ class GlyphboundApp(App):
         with Static(id="bottom-bar"):
             yield self.stats_panel
             yield self.message_log
+        action_bar = Static("", id="action-bar")
+        action_bar.border_title = "Commands"
+        yield action_bar
 
     def on_mount(self) -> None:
         self._update_title()
@@ -720,6 +742,7 @@ class GlyphboundApp(App):
             f"{name} the {char_class.value} descends into the {self.dungeon.theme.name}."
         )
         self.stats_panel.refresh()
+        self._refresh_action_bar()
 
     def _update_title(self) -> None:
         title = self.query_one("#title-bar", Static)
@@ -731,8 +754,13 @@ class GlyphboundApp(App):
     def action_move_left(self)  -> None: self._move(-1, 0)
     def action_move_right(self) -> None: self._move(1,  0)
 
-    def action_scroll_log_up(self)   -> None: self.message_log.scroll_up()
-    def action_scroll_log_down(self) -> None: self.message_log.scroll_down()
+    def action_scroll_log_up(self) -> None:
+        if len(self.screen_stack) == 1:
+            self.message_log.scroll_up()
+
+    def action_scroll_log_down(self) -> None:
+        if len(self.screen_stack) == 1:
+            self.message_log.scroll_down()
 
     def _move(self, dx: int, dy: int) -> None:
         if not self.player:
@@ -740,10 +768,7 @@ class GlyphboundApp(App):
         nx, ny = self.dungeon.party_x + dx, self.dungeon.party_y + dy
         monster = self.dungeon.monster_at(nx, ny)
         if monster:
-            self.push_screen(
-                CombatScreen(self.player, monster, (nx, ny)),
-                callback=self._combat_finished,
-            )
+            self._bump_attack(monster, nx, ny)
             return
 
         # Check if player is about to open a door (tile at dest is DOOR_CLOSED)
@@ -765,8 +790,6 @@ class GlyphboundApp(App):
         tile = self.dungeon.tile_at(x, y)
         if tile == STAIR_DOWN:
             self._descend()
-        elif tile == STAIR_UP:
-            self._ascend()
         elif tile == SHOP:
             self._enter_shop()
         else:
@@ -776,16 +799,14 @@ class GlyphboundApp(App):
                 self._trigger_trap(x, y, trap)
                 if self.player.hp == 0:
                     return
-            # After player moves, run monster AI turns
-            self._monster_turns()
-            self.map_view.refresh()
+            # Auto-pick-up anything on the landing tile
             items = list(self.dungeon.items_at(x, y))
             for item in items:
                 msg = self.player.pick_up(item)
                 self.dungeon.remove_item(x, y, item)
                 self.message_log.add(msg)
-            if items:
-                self.stats_panel.refresh()
+            # The world takes its turn (monsters act, buffs decay, death checked)
+            self._resolve_turn()
 
     def _detect_magic_traps(self) -> None:
         """Detect Magic reveals all Flame Ward traps on the current floor."""
@@ -869,42 +890,158 @@ class GlyphboundApp(App):
                 f"You fail to disarm the {target_trap.name}!"
             )
 
+    # ── Turn-based combat (map-level) ────────────────────────────────────────
+
+    def _bump_attack(self, monster, mx: int, my: int) -> None:
+        """Player walks into a monster: one player strike, then the world takes a turn."""
+        from .combat import execute_player_attack
+
+        for line in execute_player_attack(self.player, monster):
+            self.message_log.add(line)
+
+        if monster.hp == 0:
+            self._reward_kill(monster, mx, my)
+            self.stats_panel.refresh()
+            self.map_view.refresh()
+            self._resolve_turn()
+            return
+
+        # Monster survived — it (and every other monster) acts on the world turn.
+        self._resolve_turn()
+
+    def _reward_kill(self, monster, mx: int, my: int) -> None:
+        """Grant XP, handle level-up, remove the monster, and drop loot on its tile."""
+        self.player.xp += monster.xp_value
+        self.player.stat_monsters_killed += 1
+        self.message_log.add(f"You defeated the {monster.name}! +{monster.xp_value} XP")
+        leveled, level_msgs = self.player.check_level_up()
+        for line in level_msgs:
+            self.message_log.add(line)
+        self.dungeon.remove_monster(mx, my)
+        loot = monster.drop_loot()
+        for item in loot:
+            self.dungeon.place_item(mx, my, item)
+        if loot:
+            self.message_log.add(f"  {monster.name} dropped: {', '.join(i.name for i in loot)}")
+
+    def _resolve_turn(self) -> None:
+        """Advance the world one turn after a turn-consuming player action.
+
+        Monsters act, combat buffs decay, the UI refreshes, and death is
+        checked exactly once. Every player action that costs a turn (move,
+        bump, rage, spell, potion, scroll) ends by calling this.
+        """
+        if not self.player or self.player.hp == 0:
+            return
+        self._monster_turns()
+        self._decay_combat_buffs()
+        self.stats_panel.refresh()
+        self.map_view.refresh()
+        self._refresh_action_bar()
+        if self.player.hp == 0:
+            self._player_died()
+
+    def _in_combat(self) -> bool:
+        """True if any monster is within its chase range of the player (engaged)."""
+        return bool(self._engaged_monsters())
+
+    def _decay_combat_buffs(self) -> None:
+        """Clear temporary spell buffs once the player is no longer in combat."""
+        if not self._in_combat():
+            self.player.temp_defense_bonus = 0
+            self.player.temp_attack_bonus = 0
+
     def _monster_turns(self) -> None:
-        """Execute AI turn for each monster on the map."""
+        """Execute one AI turn for each monster on the map."""
         from .ai import ai_turn
 
         # Snapshot positions to avoid mutating dict during iteration
         monster_positions = list(self.dungeon.monsters.items())
 
         for (mx, my), monster in monster_positions:
-            # Check monster still exists (might have been killed by another monster bumping player)
+            # Monster may have been removed (e.g. killed) since the snapshot
             if self.dungeon.monster_at(mx, my) != monster:
+                continue
+            # A dead player ends the turn immediately — no piling on a corpse
+            if self.player.hp == 0:
+                return
+            # Frozen monsters (e.g. after the player flees) lose their turn
+            if monster.frozen_turns > 0:
+                monster.frozen_turns -= 1
                 continue
 
             new_pos = ai_turn(self.dungeon, monster, mx, my)
-            if new_pos:
-                new_x, new_y = new_pos
-                # Check if monster is trying to bump player
-                if (new_x, new_y) == (self.dungeon.party_x, self.dungeon.party_y):
-                    # Monster attacks player
-                    self._monster_attacks_player(monster, mx, my)
-                    # Don't move the monster; it stays in place after attacking
-                else:
-                    # Normal movement
-                    self.dungeon.move_monster(mx, my, new_x, new_y)
+            if not new_pos:
+                continue
+            new_x, new_y = new_pos
+            if (new_x, new_y) == (self.dungeon.party_x, self.dungeon.party_y):
+                # Adjacent monster attacks instead of moving onto the player
+                self._monster_attack(monster)
+            else:
+                self.dungeon.move_monster(mx, my, new_x, new_y)
 
-    def _monster_attacks_player(self, monster, mx: int, my: int) -> None:
-        """Handle a monster attacking the player from (mx, my)."""
+    def _monster_attack(self, monster) -> None:
+        """A single monster attacks the player. Logs only; death handled by caller."""
         from .combat import execute_monster_attack
 
-        lines = execute_monster_attack(self.player, monster)
-        for line in lines:
+        for line in execute_monster_attack(self.player, monster):
             self.message_log.add(line)
 
-        self.stats_panel.refresh()
+    # ── Action bar ───────────────────────────────────────────────────────────
 
-        if self.player.hp == 0:
-            self._player_died()
+    def _refresh_action_bar(self) -> None:
+        """Update the bottom action bar with the commands available right now."""
+        bar = self.query_one("#action-bar", Static)
+        p = self.player
+        if p is None:
+            bar.update("")
+            return
+
+        engaged = self._in_combat()
+        parts: list[str] = []
+
+        # Movement / basic attack is always available
+        parts.append("[bold]WASD[/bold] move" + ("/attack" if engaged else ""))
+
+        # Rage — Warriors only
+        if p.char_class == CharacterClass.WARRIOR:
+            if p.rage_active:
+                parts.append(f"[bold red](R)age:{p.rage_turns_remaining}[/bold red]")
+            elif not p.rage_used_this_floor:
+                parts.append("[bold](R)[/bold]age")
+            else:
+                parts.append("[dim](R)age used[/dim]")
+
+        # Spells — casters with at least one affordable spell
+        if p.spells:
+            can_cast = any(s.mp_cost <= p.mp for s in p.spells)
+            parts.append("[bold](Z)[/bold]Spell" if can_cast else "[dim](Z)Spell[/dim]")
+
+        # Potions
+        if any(i.kind == ItemKind.POTION for i in p.inventory):
+            parts.append("[bold](P)[/bold]otion")
+
+        # Scrolls
+        if any(i.kind == ItemKind.SCROLL for i in p.inventory):
+            parts.append("[bold](C)[/bold]Scroll")
+
+        # Flee — only meaningful while engaged
+        if engaged:
+            parts.append("[bold](F)[/bold]lee")
+
+        # Items on the floor
+        if self.dungeon.items_at(self.dungeon.party_x, self.dungeon.party_y):
+            parts.append("[bold](G)[/bold]et")
+
+        parts.append("[bold](I)[/bold]nv")
+
+        if p.invuln_active:
+            parts.append(f"[bold cyan]INVULN:{p.invuln_turns_remaining}[/bold cyan]")
+
+        # Second line: log scroll + quit hints, always present
+        scroll_hint = "[dim](J/K) scroll log   (Q)uit[/dim]"
+
+        bar.update("   ".join(parts) + "\n" + scroll_hint)
 
     def _player_died(self) -> None:
         self.message_log.add("── YOU HAVE DIED ──")
@@ -916,7 +1053,6 @@ class GlyphboundApp(App):
     def _death_dismissed(self, restart: bool) -> None:
         if restart:
             self.dungeon = generate_dungeon(floor=1, place_up_stair=False)
-            self._floor_stack.clear()
             self.player = None
             self.stats_panel.player = None
             self.map_view.dungeon = self.dungeon
@@ -924,21 +1060,22 @@ class GlyphboundApp(App):
             self._update_title()
             self.push_screen(ClassSelectScreen(), callback=self._class_chosen)
 
-    def _combat_finished(self, result: CombatResult) -> None:
-        for line in result.log:
-            self.message_log.add(line)
-        if result.monster_killed:
-            self.dungeon.remove_monster(*result.pos)
-            # Place loot drops on the ground
-            for item in result.loot:
-                self.dungeon.place_item(*result.pos, item)
-        self.stats_panel.refresh()
-        self.map_view.refresh()
-        if not result.survived and not result.fled:
-            self._player_died()
+    def _can_act(self) -> bool:
+        """True when the main map is active and a living player can take a turn.
+
+        Guards app-level action bindings so they don't fire while a modal
+        screen (inventory, spellbook, shop, …) is open — Textual app bindings
+        otherwise bubble up underneath a pushed screen.
+        """
+        return (
+            self.player is not None
+            and self.player.hp > 0
+            and len(self.screen_stack) == 1
+        )
 
     def action_get_item(self) -> None:
-        if not self.player:
+        # Manual pickup fallback; items also auto-collect on move. No turn cost.
+        if not self._can_act():
             return
         x, y = self.dungeon.party_x, self.dungeon.party_y
         items = list(self.dungeon.items_at(x, y))
@@ -948,9 +1085,10 @@ class GlyphboundApp(App):
             self.message_log.add(msg)
         self.stats_panel.refresh()
         self.map_view.refresh()
+        self._refresh_action_bar()
 
     def action_inventory(self) -> None:
-        if not self.player:
+        if not self._can_act():
             return
         self.push_screen(InventoryScreen(self.player), callback=self._inv_closed)
 
@@ -959,9 +1097,23 @@ class GlyphboundApp(App):
             self.message_log.add(msg)
         self.stats_panel.refresh()
         self.map_view.refresh()
+        self._refresh_action_bar()
+
+    # ── Map-level combat actions (each consumes a turn) ──────────────────────
+
+    def action_rage(self) -> None:
+        if not self._can_act():
+            return
+        if self.player.char_class != CharacterClass.WARRIOR:
+            return
+        if self.player.rage_used_this_floor:
+            self.message_log.add("You have already raged this floor.")
+            return
+        self.message_log.add(self.player.activate_rage())
+        self._resolve_turn()
 
     def action_spells(self) -> None:
-        if not self.player:
+        if not self._can_act():
             return
         if not self.player.spells:
             self.message_log.add("Your class cannot cast spells.")
@@ -970,13 +1122,13 @@ class GlyphboundApp(App):
 
     def _spell_chosen(self, spell: Spell | None) -> None:
         if spell is None:
-            return
+            return  # cancelled — no turn consumed
 
         if spell.effect in (SpellEffect.DAMAGE, SpellEffect.TURN_UNDEAD):
             nearest = self.dungeon.nearest_monster()
             if nearest is None:
                 self.message_log.add("No monsters in range.")
-                return
+                return  # nothing happened — don't burn a turn
             pos, monster = nearest
             log, killed, loot = apply_spell_to_monster(self.player, spell, monster)
             for line in log:
@@ -992,8 +1144,84 @@ class GlyphboundApp(App):
             if sentinel == -1:
                 self._detect_magic_traps()
 
-        self.stats_panel.refresh()
-        self.map_view.refresh()
+        self._resolve_turn()
+
+    def action_potion(self) -> None:
+        if not self._can_act():
+            return
+        if not any(i.kind == ItemKind.POTION for i in self.player.inventory):
+            self.message_log.add("You have no potions.")
+            return
+        self.push_screen(PotionSelectScreen(self.player), callback=self._potion_chosen)
+
+    def _potion_chosen(self, item: Item | None) -> None:
+        if item is None:
+            return  # cancelled — no turn consumed
+        self.message_log.add(self.player.use_potion(item))
+        self._resolve_turn()
+
+    def action_scroll(self) -> None:
+        if not self._can_act():
+            return
+        if not any(i.kind == ItemKind.SCROLL for i in self.player.inventory):
+            self.message_log.add("You have no scrolls.")
+            return
+        self.push_screen(ScrollSelectScreen(self.player), callback=self._scroll_chosen)
+
+    def _scroll_chosen(self, item: Item | None) -> None:
+        if item is None:
+            return  # cancelled — no turn consumed
+        msg, fireball_dmg = self.player.use_scroll(item)
+        self.message_log.add(msg)
+        if fireball_dmg:
+            nearest = self.dungeon.nearest_monster()
+            if nearest is not None:
+                pos, monster = nearest
+                monster.hp = max(0, monster.hp - fireball_dmg)
+                self.message_log.add(
+                    f"  {monster.name} takes {fireball_dmg} fire damage! "
+                    f"HP: {monster.hp}/{monster.max_hp}"
+                )
+                if monster.hp == 0:
+                    self._reward_kill(monster, *pos)
+        self._resolve_turn()
+
+    def action_flee(self) -> None:
+        if not self._can_act():
+            return
+        engaged = self._engaged_monsters()
+        if not engaged:
+            self.message_log.add("There is nothing to flee from.")
+            return
+        # Thief: 50% + 5%/level (cap 100%). Others: a flat 25%.
+        if self.player.char_class == CharacterClass.THIEF:
+            chance = min(0.50 + self.player.level * 0.05, 1.0)
+        else:
+            chance = 0.25
+        if random.random() < chance:
+            for monster in engaged:
+                monster.frozen_turns = self.FLEE_FREEZE_TURNS
+            self.message_log.add(
+                f"[bold green]You break away![/bold green] Your pursuers falter "
+                f"for {self.FLEE_FREEZE_TURNS} turns — run!"
+            )
+            # Freeze takes hold this turn; monsters don't act on the way out.
+            self._decay_combat_buffs()
+            self.stats_panel.refresh()
+            self.map_view.refresh()
+            self._refresh_action_bar()
+        else:
+            self.message_log.add("[yellow]You fail to break away![/yellow]")
+            self._resolve_turn()
+
+    def _engaged_monsters(self) -> list:
+        """Return every monster currently within its chase range of the player."""
+        px, py = self.dungeon.party_x, self.dungeon.party_y
+        return [
+            monster
+            for (mx, my), monster in self.dungeon.monsters.items()
+            if abs(mx - px) + abs(my - py) <= monster.chase_range
+        ]
 
     def action_quit(self) -> None:
         """Show quit confirmation dialog."""
@@ -1005,41 +1233,25 @@ class GlyphboundApp(App):
             self.exit()
 
     def _descend(self) -> None:
-        sx, sy = self.dungeon.stair_down_pos
-        self._floor_stack.append((self.dungeon, sx, sy))
         next_floor = self.dungeon.floor + 1
         if self.player:
             self.player.stat_floors_descended += 1
             self.player.rage_used_this_floor = False
             self.player.rage_turns_remaining = 0
-        self.dungeon = generate_dungeon(floor=next_floor, place_up_stair=True)
+        # Stairs crumble behind you — each floor is a fresh dungeon, no return.
+        self.dungeon = generate_dungeon(floor=next_floor, place_up_stair=False)
         self.map_view.dungeon = self.dungeon
         self.map_view.refresh()
         self._update_title()
         self.stats_panel.floor_num = self.dungeon.floor
         self.stats_panel.refresh()
+        self._refresh_action_bar()
         if self.player:
+            self.message_log.add(
+                "[dim]The stairs crumble to dust behind you.[/dim]"
+            )
             self.message_log.add(
                 f"Floor {self.dungeon.floor} — entering the {self.dungeon.theme.name}."
-            )
-
-    def _ascend(self) -> None:
-        if not self._floor_stack:
-            return
-        prev_dungeon, stair_x, stair_y = self._floor_stack.pop()
-        prev_dungeon.party_x, prev_dungeon.party_y = stair_x, stair_y
-        self.dungeon = prev_dungeon
-        if self.player:
-            self.player.rage_used_this_floor = False
-            self.player.rage_turns_remaining = 0
-        self.map_view.dungeon = self.dungeon
-        self.map_view.refresh()
-        self._update_title()
-        self.stats_panel.floor_num = self.dungeon.floor
-        self.stats_panel.refresh()
-        if self.player:
-            self.message_log.add(
-                f"Ascended to floor {self.dungeon.floor}."
             )
 
     def _enter_shop(self) -> None:
@@ -1049,3 +1261,4 @@ class GlyphboundApp(App):
     def _shop_closed(self, _result) -> None:
         self.stats_panel.refresh()
         self.map_view.refresh()
+        self._refresh_action_bar()

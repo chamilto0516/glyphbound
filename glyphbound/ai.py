@@ -80,9 +80,10 @@ def ai_turn(dungeon: Dungeon, monster: Monster, mx: int, my: int) -> Optional[Tu
     # CHASE: if player is within chase range, move toward them
     if dist_to_player <= monster.chase_range:
         monster.ai_state = AIState.CHASE
-        # If already adjacent, attack (handled by caller checking collision)
+        # If already adjacent, signal an attack by returning the player's tile.
+        # The caller (_monster_turns) routes a move onto the player into combat.
         if dist_to_player == 1:
-            return None  # stay put, let caller trigger combat
+            return (px, py)
         # Otherwise move closer
         new_pos = simple_chase(dungeon, mx, my, px, py)
         return new_pos if new_pos else None
