@@ -43,6 +43,12 @@ class Item:
     damage_count: int   = 1   # number of dice, or static value when sides=0
     is_unique: bool     = False  # named/special items
     warrior_only: bool  = False  # requires Warrior class to equip
+    two_handed: bool    = False  # weapons: occupies both hands; no off-hand / dual-wield
+    backstab_bonus: float = 0.0  # weapons: added to a Thief's per-hit backstab chance
+    thief_only: bool    = False  # requires Thief class to equip
+    strikes: int        = 1      # weapons: number of attacks made per combat turn
+    undead_bonus_sides: int = 0  # weapons: extra damage dice vs undead (0 = none)
+    undead_bonus_count: int = 1  # weapons: number of undead-bonus dice
     invuln_turns: int   = 0     # scrolls: rounds of invulnerability granted
     light_radius: int   = 0     # >0: emits light when equipped (or, for scrolls, when read)
     xp_bonus: int       = 0     # potions: XP granted on use; treasures: XP granted on pickup
@@ -52,6 +58,12 @@ class Item:
         parts = [self.name]
         if self.attack_bonus:
             parts.append(f"+{self.attack_bonus} ATK")
+        if self.two_handed:
+            parts.append("2H")
+        if self.strikes > 1:
+            parts.append(f"{self.strikes} strikes")
+        if self.undead_bonus_sides:
+            parts.append(f"+{self.undead_bonus_count}d{self.undead_bonus_sides} vs undead")
         if self.defense_bonus:
             parts.append(f"+{self.defense_bonus} DEF")
         if self.damage_reduction:
@@ -71,10 +83,27 @@ class Item:
 
 # ── Item catalog ───────────────────────────────────────────────────────────────
 
-ITEM_CLUB = Item(
-    name="Club", kind=ItemKind.WEAPON, glyph="/",
-    attack_bonus=1, gold_value=2, equip_slot=EquipSlot.WEAPON,
-    damage_sides=0, damage_count=1,   # static 1 damage
+# ── Class starting weapons ─────────────────────────────────────────────────────
+ITEM_RUSTY_SWORD = Item(
+    name="Rusty Sword", kind=ItemKind.WEAPON, glyph="/",
+    attack_bonus=1, gold_value=4, equip_slot=EquipSlot.WEAPON,
+    damage_sides=4, damage_count=1,   # 1d4 — Warrior starter
+)
+ITEM_ADEPT_STAFF = Item(
+    name="Adept Staff", kind=ItemKind.WEAPON, glyph="/",
+    attack_bonus=1, gold_value=4, equip_slot=EquipSlot.WEAPON,
+    damage_sides=4, damage_count=1,   # 1d4 — Wizard starter
+)
+ITEM_SNEAKY_DAGGER = Item(
+    name="Sneaky Dagger", kind=ItemKind.WEAPON, glyph="/",
+    attack_bonus=1, gold_value=4, equip_slot=EquipSlot.WEAPON,
+    damage_sides=4, damage_count=1,   # 1d4 — Thief starter
+    backstab_bonus=0.10,              # sharpens the Thief's backstab
+)
+ITEM_ACOLYTE_MACE = Item(
+    name="Acolyte Mace", kind=ItemKind.WEAPON, glyph="/",
+    attack_bonus=1, gold_value=5, equip_slot=EquipSlot.WEAPON,
+    damage_sides=6, damage_count=1,   # 1d6 — Cleric starter
 )
 ITEM_DAGGER = Item(
     name="Dagger", kind=ItemKind.WEAPON, glyph="/",
@@ -117,7 +146,7 @@ ITEM_GREAT_SWORD = Item(
     name="Great Sword", kind=ItemKind.WEAPON, glyph="/",
     attack_bonus=6, gold_value=80, equip_slot=EquipSlot.WEAPON,
     damage_sides=12, damage_count=1,   # 1d12
-    warrior_only=True,
+    warrior_only=True, two_handed=True,
 )
 ITEM_WAR_HAMMER = Item(
     name="War Hammer", kind=ItemKind.WEAPON, glyph="/",
@@ -129,13 +158,13 @@ ITEM_HALBERD = Item(
     name="Halberd", kind=ItemKind.WEAPON, glyph="/",
     attack_bonus=7, gold_value=100, equip_slot=EquipSlot.WEAPON,
     damage_sides=10, damage_count=2,   # 2d10
-    warrior_only=True,
+    warrior_only=True, two_handed=True,
 )
 ITEM_MAUL = Item(
     name="Maul", kind=ItemKind.WEAPON, glyph="/",
     attack_bonus=4, gold_value=60, equip_slot=EquipSlot.WEAPON,
     damage_sides=6, damage_count=3,    # 3d6
-    warrior_only=True,
+    warrior_only=True, two_handed=True,
 )
 
 # ── Warrior-only Heavy Armor ───────────────────────────────────────────────────
@@ -158,9 +187,10 @@ ITEM_KITE_SHIELD = Item(
 # ── Named/Unique Weapons ───────────────────────────────────────────────────────
 ITEM_FANG = Item(
     name="Fang", kind=ItemKind.WEAPON, glyph="/",
-    attack_bonus=3, gold_value=80, equip_slot=EquipSlot.WEAPON,
-    damage_sides=6, damage_count=1,   # 1d6
-    is_unique=True,
+    attack_bonus=3, gold_value=120, equip_slot=EquipSlot.WEAPON,
+    damage_sides=6, damage_count=1,   # 1d6, but strikes three times per turn
+    strikes=3, backstab_bonus=0.10,   # a quick thief blade; each strike can backstab
+    is_unique=True, thief_only=True,
 )
 ITEM_FLAMEBRAND = Item(
     name="Flamebrand", kind=ItemKind.WEAPON, glyph="/",
@@ -172,7 +202,7 @@ ITEM_GORECLEAVER = Item(
     name="Gorecleaver", kind=ItemKind.WEAPON, glyph="/",
     attack_bonus=8, gold_value=250, equip_slot=EquipSlot.WEAPON,
     damage_sides=12, damage_count=2,   # 2d12
-    is_unique=True, warrior_only=True,
+    is_unique=True, warrior_only=True, two_handed=True,
 )
 
 ITEM_LEATHER_CAP = Item(
@@ -339,7 +369,8 @@ ITEM_SUNBLADE = Item(
     name="Sunblade", kind=ItemKind.WEAPON, glyph="/",
     attack_bonus=4, gold_value=180, equip_slot=EquipSlot.WEAPON,
     damage_sides=8, damage_count=1,   # 1d8
-    is_unique=True, light_radius=8,
+    undead_bonus_sides=8, undead_bonus_count=1,  # +1d8 radiant damage vs undead
+    light_radius=8,
 )
 ITEM_AEGIS_OF_DAWN = Item(
     name="Aegis of Dawn", kind=ItemKind.ARMOR, glyph="]",
@@ -354,8 +385,8 @@ ITEM_STARLIT_HELM = Item(
 
 # ── Loot Pools ─────────────────────────────────────────────────────────────────
 
-COMMON_WEAPONS = [ITEM_CLUB, ITEM_DAGGER, ITEM_SHORT_SWORD, ITEM_STAFF, ITEM_MACE]
-RARE_WEAPONS = [ITEM_BROAD_SWORD, ITEM_LONG_SWORD, ITEM_BATTLE_AXE]
+COMMON_WEAPONS = [ITEM_DAGGER, ITEM_SHORT_SWORD, ITEM_STAFF, ITEM_MACE]
+RARE_WEAPONS = [ITEM_BROAD_SWORD, ITEM_LONG_SWORD, ITEM_BATTLE_AXE, ITEM_SUNBLADE]
 UNIQUE_WEAPONS = [ITEM_FANG, ITEM_FLAMEBRAND]
 
 HEAVY_WEAPONS = [ITEM_GREAT_SWORD, ITEM_WAR_HAMMER, ITEM_HALBERD, ITEM_MAUL]
@@ -390,14 +421,17 @@ def shop_stock(floor: int) -> list:
     """Return the shop's curated inventory for the given floor depth."""
     # A torch and a scroll of illumination are always for sale — light is a staple.
     stock = [ITEM_HEALTH_POTION, ITEM_MANA_POTION, ITEM_TORCH, ITEM_SCROLL_ILLUMINATION]
+    # Basic weapons available from the very first floor so no class is stuck
+    # flailing with a starter weapon against early monsters.
+    stock += [ITEM_DAGGER, ITEM_STAFF, ITEM_MACE, ITEM_SHORT_SWORD]
     if floor >= 2:
         stock += [ITEM_ELIXIR_VITALITY, ITEM_ELIXIR_CLARITY]
     if floor >= 3:
-        stock += [ITEM_DAGGER, ITEM_SHORT_SWORD, ITEM_MACE]
+        stock += [ITEM_BROAD_SWORD]
     if floor >= 4:
         stock += [ITEM_LEATHER_ARMOR, ITEM_SMALL_SHIELD, ITEM_IRON_HELM, ITEM_LEATHER_BOOTS, ITEM_LEATHER_GLOVES]
     if floor >= 5:
-        stock += [ITEM_BROAD_SWORD, ITEM_LONG_SWORD, ITEM_RING_OF_PROTECTION]
+        stock += [ITEM_LONG_SWORD, ITEM_RING_OF_PROTECTION]
     if floor >= 6:
         stock += [ITEM_CHAIN_MAIL, ITEM_SCROLL_HEAL, ITEM_SCROLL_INVULNERABILITY, ITEM_IRON_BOOTS, ITEM_GAUNTLETS]
     if floor >= 7:

@@ -7,7 +7,7 @@ from typing import List, Optional
 
 from .items import (
     Item,
-    ITEM_CLUB, ITEM_DAGGER, ITEM_SHORT_SWORD, ITEM_BROAD_SWORD,
+    ITEM_DAGGER, ITEM_SHORT_SWORD, ITEM_BROAD_SWORD,
     ITEM_MACE, ITEM_LONG_SWORD, ITEM_BATTLE_AXE,
     ITEM_GOLD_PILE_SMALL, ITEM_GOLD_PILE_MEDIUM, ITEM_GOLD_PILE_LARGE,
     ITEM_GEM,
@@ -165,7 +165,7 @@ def spawn_goblin() -> Monster:
     return Monster(
         kind=MonsterKind.GOBLIN, name="Goblin", glyph="g",
         hp=5, max_hp=5, attack=1, defense=1, xp_value=1,
-        min_floor=1, weapon=ITEM_CLUB,
+        min_floor=1, weapon=None,
         ai_state=AIState.WANDER, chase_range=10,
     )
 
@@ -194,7 +194,7 @@ def spawn_zombie() -> Monster:
     return Monster(
         kind=MonsterKind.ZOMBIE, name="Zombie", glyph="z",
         hp=15, max_hp=15, attack=4, defense=2, xp_value=4,
-        min_floor=2, is_undead=True, weapon=ITEM_CLUB,
+        min_floor=2, is_undead=True, weapon=None,
         ai_state=AIState.WANDER, chase_range=5,
     )
 

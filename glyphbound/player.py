@@ -121,9 +121,19 @@ class Player:
 
     def _equip_starting_gear(self) -> None:
         """Give starting equipment and auto-equip it."""
-        from .items import ITEM_CLUB, ITEM_LEATHER_CAP
-        # Everyone starts with a club and leather cap, already equipped
-        self.equipped[EquipSlot.WEAPON.value] = ITEM_CLUB
+        from .items import (
+            ITEM_LEATHER_CAP, ITEM_RUSTY_SWORD, ITEM_ADEPT_STAFF,
+            ITEM_SNEAKY_DAGGER, ITEM_ACOLYTE_MACE,
+        )
+        # Each class starts with a real (if humble) weapon instead of a Club,
+        # so Floor 1 doesn't devolve into grinding monsters down 1 HP at a time.
+        starting_weapon = {
+            CharacterClass.WARRIOR: ITEM_RUSTY_SWORD,
+            CharacterClass.WIZARD:  ITEM_ADEPT_STAFF,
+            CharacterClass.THIEF:   ITEM_SNEAKY_DAGGER,
+            CharacterClass.CLERIC:  ITEM_ACOLYTE_MACE,
+        }[self.char_class]
+        self.equipped[EquipSlot.WEAPON.value] = starting_weapon
         self.equipped[EquipSlot.HELMET.value] = ITEM_LEATHER_CAP
 
     # ── Computed stats ─────────────────────────────────────────────────────────
@@ -188,8 +198,9 @@ class Player:
 
         Special routing:
         - Rings auto-fill ring_left first, then ring_right.
-        - Warriors may equip a weapon into the shield slot (dual-wield).
-          Equipping a shield replaces any off-hand weapon.
+        - Warriors may dual-wield a second ONE-HANDED weapon into the off-hand
+          (shield) slot. Two-handed weapons cannot be dual-wielded and evict any
+          off-hand item; equipping an off-hand item evicts a two-handed weapon.
         """
         if item not in self.inventory:
             return "You don't have that.", None
@@ -197,6 +208,8 @@ class Player:
             return f"{item.name} cannot be equipped.", None
         if item.warrior_only and self.char_class != CharacterClass.WARRIOR:
             return f"{item.name} requires martial training — Warriors only.", None
+        if item.thief_only and self.char_class != CharacterClass.THIEF:
+            return f"{item.name} answers only to nimble hands — Thieves only.", None
 
         # ── Determine actual slot key ──────────────────────────────────────────
         if item.equip_slot == EquipSlot.RING:
@@ -209,24 +222,43 @@ class Player:
                 # Both full — displace left ring
                 slot = EquipSlot.RING_LEFT.value
         elif (item.equip_slot == EquipSlot.WEAPON
+              and not item.two_handed
               and self.char_class == CharacterClass.WARRIOR
-              and EquipSlot.WEAPON.value in self.equipped):
-            # Warrior already has a main weapon — offer the off-hand slot
+              and EquipSlot.WEAPON.value in self.equipped
+              and not self.equipped[EquipSlot.WEAPON.value].two_handed):
+            # Warrior already has a one-handed main weapon — dual-wield into the
+            # off-hand. (A two-handed main occupies both hands, so no off-hand.)
             slot = EquipSlot.SHIELD.value
         else:
             slot = item.equip_slot.value
 
+        # Collect everything this equip displaces (a two-handed weapon frees the
+        # off-hand; an off-hand item frees a two-handed main weapon).
+        displaced_items: List[Item] = []
+        main = self.equipped.get(EquipSlot.WEAPON.value)
+        if (item.equip_slot == EquipSlot.WEAPON and item.two_handed
+                and slot == EquipSlot.WEAPON.value):
+            off = self.equipped.pop(EquipSlot.SHIELD.value, None)
+            if off is not None:
+                displaced_items.append(off)
+        elif slot == EquipSlot.SHIELD.value and main is not None and main.two_handed:
+            del self.equipped[EquipSlot.WEAPON.value]
+            displaced_items.append(main)
+
         displaced = self.equipped.get(slot)
         if displaced:
-            self.inventory.append(displaced)
+            displaced_items.append(displaced)
+        for d in displaced_items:
+            self.inventory.append(d)
         self.equipped[slot] = item
         self.inventory.remove(item)
 
         slot_label = _slot_label(slot)
         msg = f"Equipped {item.name} ({slot_label})."
-        if displaced:
-            msg += f" ({displaced.name} returned to inventory.)"
-        return msg, displaced
+        if displaced_items:
+            names = ", ".join(d.name for d in displaced_items)
+            msg += f" ({names} returned to inventory.)"
+        return msg, (displaced_items[0] if displaced_items else None)
 
     def unequip(self, slot: EquipSlot) -> str:
         item = self.equipped.pop(slot.value, None)
@@ -449,6 +481,9 @@ class Player:
     def is_dual_wielding(self) -> bool:
         """True when a Warrior has a weapon in both the main and off-hand (shield) slots."""
         if self.char_class != CharacterClass.WARRIOR:
+            return False
+        main = self.equipped.get(EquipSlot.WEAPON.value)
+        if main is not None and main.two_handed:
             return False
         off_hand = self.equipped.get(EquipSlot.SHIELD.value)
         return off_hand is not None and off_hand.equip_slot == EquipSlot.WEAPON

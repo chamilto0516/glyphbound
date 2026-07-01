@@ -78,23 +78,38 @@ def _single_weapon_attack(
         log.append(f"  Your {label} misses the {monster.name}.")
         return
     dmg = roll_damage(weapon)
+    weapon_backstab = weapon.backstab_bonus if weapon else 0.0
     backstab = (
         player.char_class == CharacterClass.THIEF
-        and random.random() < player.level * 0.10
+        and random.random() < player.level * 0.10 + weapon_backstab
     )
+    # Anti-undead weapons add extra radiant damage on top of the (possibly
+    # multiplied) strike — the bonus itself is not doubled by backstab/rage.
+    undead_bonus = 0
+    if weapon and weapon.undead_bonus_sides and monster.is_undead:
+        undead_bonus = sum(
+            random.randint(1, weapon.undead_bonus_sides)
+            for _ in range(weapon.undead_bonus_count)
+        )
     if backstab:
         dmg *= 2
+        dmg += undead_bonus
         monster.hp = max(0, monster.hp - dmg)
-        log.append(f"  [bold yellow]BACKSTAB![/bold yellow] Your {label} strikes a vital spot for {dmg}! {monster.name} HP: {monster.hp}/{monster.max_hp}")
+        smite = f" [bold bright_yellow](+{undead_bonus} radiant)[/bold bright_yellow]" if undead_bonus else ""
+        log.append(f"  [bold yellow]BACKSTAB![/bold yellow] Your {label} strikes a vital spot for {dmg}!{smite} {monster.name} HP: {monster.hp}/{monster.max_hp}")
     elif player.rage_active:
         dmg *= 2
+        dmg += undead_bonus
         player.rage_turns_remaining -= 1
         rage_note = " (Rage fades)" if player.rage_turns_remaining == 0 else f" (Rage: {player.rage_turns_remaining} left)"
         monster.hp = max(0, monster.hp - dmg)
-        log.append(f"  [bold red]RAGE![/bold red] Your {label} smashes for {dmg}!{rage_note} {monster.name} HP: {monster.hp}/{monster.max_hp}")
+        smite = f" [bold bright_yellow](+{undead_bonus} radiant)[/bold bright_yellow]" if undead_bonus else ""
+        log.append(f"  [bold red]RAGE![/bold red] Your {label} smashes for {dmg}!{rage_note}{smite} {monster.name} HP: {monster.hp}/{monster.max_hp}")
     else:
+        dmg += undead_bonus
         monster.hp = max(0, monster.hp - dmg)
-        log.append(f"  Your {label} hits for {dmg}! {monster.name} HP: {monster.hp}/{monster.max_hp}")
+        smite = f" [bold bright_yellow](+{undead_bonus} radiant)[/bold bright_yellow]" if undead_bonus else ""
+        log.append(f"  Your {label} hits for {dmg}!{smite} {monster.name} HP: {monster.hp}/{monster.max_hp}")
 
 
 def execute_player_attack(player: Player, monster: Monster) -> List[str]:
@@ -116,7 +131,11 @@ def execute_player_attack(player: Player, monster: Monster) -> List[str]:
             _single_weapon_attack(player, monster, off_wpn, off_name, log)
     else:
         wpn_name = player_weapon.name if player_weapon else "fists"
-        _single_weapon_attack(player, monster, player_weapon, wpn_name, log)
+        strikes = player_weapon.strikes if player_weapon else 1
+        for _ in range(strikes):
+            if monster.hp == 0:
+                break
+            _single_weapon_attack(player, monster, player_weapon, wpn_name, log)
     return log
 
 
