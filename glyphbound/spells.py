@@ -8,7 +8,8 @@ from .fov import SPELL_RADIUS
 
 class SpellEffect(Enum):
     DAMAGE      = "damage"      # deals direct damage to target monster
-    BUFF_DEF    = "buff_def"    # raises caster defense for next combat
+    BUFF_DEF    = "buff_def"    # raises caster defense by a flat amount for a few turns
+    BUFF_ABSORB = "buff_absorb" # grants a finite pool that soaks incoming damage
     BUFF_ATK    = "buff_atk"    # raises caster attack for next combat
     HEAL        = "heal"        # restores caster HP
     TURN_UNDEAD = "turn_undead" # destroys weak undead, damages strong undead
@@ -27,6 +28,9 @@ class Spell:
     damage_count: int = 1
     def_sides: int    = 0
     def_count: int    = 1
+    def_bonus: int    = 0   # BUFF_DEF: flat DEF granted
+    def_turns: int    = 0   # BUFF_DEF: turns the flat DEF lasts
+    absorb_amount: int = 0  # BUFF_ABSORB: damage the pool soaks
     atk_sides: int    = 0
     atk_count: int    = 1
     heal_sides: int   = 0
@@ -38,7 +42,9 @@ class Spell:
         if self.effect == SpellEffect.DAMAGE:
             return f"{self.damage_count}d{self.damage_sides}"
         if self.effect == SpellEffect.BUFF_DEF:
-            return f"+{self.def_count}d{self.def_sides} DEF"
+            return f"+{self.def_bonus} DEF ({self.def_turns}t)"
+        if self.effect == SpellEffect.BUFF_ABSORB:
+            return f"absorb {self.absorb_amount}"
         if self.effect == SpellEffect.BUFF_ATK:
             return f"+{self.atk_count}d{self.atk_sides} ATK"
         if self.effect == SpellEffect.HEAL:
@@ -70,8 +76,8 @@ SPELL_MAGIC_ARMOR = Spell(
     mp_cost=3,
     effect=SpellEffect.BUFF_DEF,
     min_level=1,
-    def_sides=10, def_count=1,
-    description="Conjures a shield of force. +1d10 DEF for next combat.",
+    def_bonus=2, def_turns=3,
+    description="Conjures a shield of force. +2 DEF for 3 turns.",
 )
 
 SPELL_DETECT_MAGIC = Spell(
@@ -120,10 +126,10 @@ SPELL_LIGHTNING_BOLT = Spell(
 SPELL_SHIELD = Spell(
     name="Shield",
     mp_cost=5,
-    effect=SpellEffect.BUFF_DEF,
+    effect=SpellEffect.BUFF_ABSORB,
     min_level=4,
-    def_sides=10, def_count=2,
-    description="A powerful barrier. +2d10 DEF for next combat.",
+    absorb_amount=15,
+    description="A powerful barrier that absorbs 15 damage.",
 )
 
 SPELL_METEOR_SWARM = Spell(
@@ -147,10 +153,10 @@ SPELL_ARCANE_BLAST = Spell(
 SPELL_TIME_STOP = Spell(
     name="Time Stop",
     mp_cost=12,
-    effect=SpellEffect.BUFF_DEF,
+    effect=SpellEffect.BUFF_ABSORB,
     min_level=7,
-    def_sides=20, def_count=2,
-    description="Bend time itself. +2d20 DEF for next combat.",
+    absorb_amount=25,
+    description="Bend time itself. Absorbs 25 damage.",
 )
 
 WIZARD_SPELLS = [
@@ -201,8 +207,8 @@ SPELL_SANCTUARY = Spell(
     mp_cost=4,
     effect=SpellEffect.BUFF_DEF,
     min_level=1,
-    def_sides=8, def_count=1,
-    description="Divine protection. +1d8 DEF for next combat.",
+    def_bonus=2, def_turns=3,
+    description="Divine protection. +2 DEF for 3 turns.",
 )
 
 SPELL_TURN_UNDEAD = Spell(
@@ -234,10 +240,10 @@ SPELL_GREATER_HEAL = Spell(
 SPELL_DIVINE_SHIELD = Spell(
     name="Divine Shield",
     mp_cost=6,
-    effect=SpellEffect.BUFF_DEF,
+    effect=SpellEffect.BUFF_ABSORB,
     min_level=5,
-    def_sides=10, def_count=2,
-    description="Impenetrable holy barrier. +2d10 DEF for next combat.",
+    absorb_amount=12,
+    description="Impenetrable holy barrier that absorbs 12 damage.",
 )
 
 SPELL_HOLY_FIRE = Spell(

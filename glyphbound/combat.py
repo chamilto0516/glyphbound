@@ -19,6 +19,27 @@ def roll_damage(weapon: Item | None) -> int:
     return sum(random.randint(1, weapon.damage_sides) for _ in range(weapon.damage_count))
 
 
+def _mitigate(player: Player, dmg: int) -> Tuple[int, str]:
+    """Apply armor damage-reduction then the absorb pool to an incoming hit.
+
+    A landed hit always deals at least 1 damage, so no amount of DR or absorb
+    grants hard invulnerability. Returns (final_damage, log_note).
+    """
+    notes = ""
+    dr = player.damage_reduction
+    if dr:
+        reduced = min(dmg, dr)
+        dmg -= reduced
+        if reduced:
+            notes += f" [dim](-{reduced} armor)[/dim]"
+    if player.damage_absorb > 0 and dmg > 0:
+        absorbed = min(dmg, player.damage_absorb)
+        player.damage_absorb -= absorbed
+        dmg -= absorbed
+        notes += f" [dim](absorbed {absorbed}, {player.damage_absorb} left)[/dim]"
+    return max(1, dmg), notes
+
+
 def _best_damage_spell(player: Player) -> Optional[Spell]:
     """Return the highest expected-damage spell the player can currently afford."""
     candidates = [
@@ -30,8 +51,17 @@ def _best_damage_spell(player: Player) -> Optional[Spell]:
     return max(candidates, key=lambda s: s.damage_sides * s.damage_count)
 
 
-def _attacker_hits(attack_roll: int, defense: int) -> bool:
-    return attack_roll > defense
+def _attacker_hits(natural: int, attack: int, defense: int) -> bool:
+    """Resolve a 1d10 hit. Natural 1 always misses, natural 10 always hits.
+
+    These natural rules inherently cap hit chance at 10%–90% on a d10, so no
+    high-DEF (or low-DEF) build can ever be fully immune or auto-hit.
+    """
+    if natural == 1:
+        return False
+    if natural == 10:
+        return True
+    return natural + attack > defense
 
 
 def _single_weapon_attack(
@@ -43,8 +73,8 @@ def _single_weapon_attack(
 ) -> None:
     """Roll one weapon strike. Mutates monster.hp and appends to log."""
     from .player import CharacterClass
-    p_roll = random.randint(1, 6) + player.attack
-    if not _attacker_hits(p_roll, monster.defense):
+    p_natural = random.randint(1, 10)
+    if not _attacker_hits(p_natural, player.attack, monster.defense):
         log.append(f"  Your {label} misses the {monster.name}.")
         return
     dmg = roll_damage(weapon)
@@ -100,8 +130,8 @@ def execute_monster_attack(player: Player, monster: Monster) -> List[str]:
         fade = " [dim](Invulnerability fades)[/dim]" if not player.invuln_active else ""
         log.append(f"  {monster.name} attacks — but you are invulnerable!{fade}")
         return log
-    m_roll = random.randint(1, 6) + monster.attack
-    if _attacker_hits(m_roll, player.defense):
+    m_natural = random.randint(1, 10)
+    if _attacker_hits(m_natural, monster.attack, player.defense):
         dmg = roll_damage(monster.weapon)
         # Warrior Toughness: 50% chance to absorb 1 point of damage
         if player.char_class == CharacterClass.WARRIOR and dmg > 1 and random.random() < 0.50:
@@ -109,10 +139,11 @@ def execute_monster_attack(player: Player, monster: Monster) -> List[str]:
             toughness_note = " [dim](Toughness)[/dim]"
         else:
             toughness_note = ""
+        dmg, notes = _mitigate(player, dmg)
         player.hp = max(0, player.hp - dmg)
         player.stat_damage_taken += dmg
         wpn_name = monster.weapon.name if monster.weapon else "claws"
-        log.append(f"  {monster.name} hits you with {wpn_name} for {dmg}!{toughness_note} Your HP: {player.hp}/{player.max_hp}")
+        log.append(f"  {monster.name} hits you with {wpn_name} for {dmg}!{toughness_note}{notes} Your HP: {player.hp}/{player.max_hp}")
     else:
         log.append(f"  {monster.name} misses you.")
     return log
@@ -152,7 +183,9 @@ def resolve_combat(player: Player, monster: Monster) -> Tuple[List[str], bool, L
         log.extend(execute_monster_attack(player, monster))
 
     player.temp_defense_bonus = 0  # buffs expire after each combat
+    player.temp_defense_turns = 0
     player.temp_attack_bonus = 0
+    player.damage_absorb = 0
     player.invuln_turns_remaining = 0
 
     loot: List[Item] = []

@@ -93,8 +93,10 @@ class Player:
     inventory: List[Item]             = field(default_factory=list)
     equipped:  Dict[str, Item]        = field(default_factory=dict)  # slot name → Item
     spells:    List[Spell]            = field(default_factory=list)
-    temp_defense_bonus: int           = 0   # cleared after each combat
+    temp_defense_bonus: int           = 0   # flat DEF from timed buffs; cleared when timer runs out
+    temp_defense_turns: int           = 0   # turns remaining on temp_defense_bonus
     temp_attack_bonus: int            = 0   # cleared after each combat
+    damage_absorb: int                = 0   # finite pool that soaks incoming damage (absorb spells)
     rage_turns_remaining: int         = 0   # counts down each attack while raging
     rage_used_this_floor: bool        = False  # once per floor
     invuln_turns_remaining: int       = 0   # rounds remaining of scroll invulnerability
@@ -135,6 +137,11 @@ class Player:
     def defense(self) -> int:
         bonus = sum(i.defense_bonus for i in self.equipped.values())
         return self._base_defense + bonus + self.temp_defense_bonus
+
+    @property
+    def damage_reduction(self) -> int:
+        """Flat damage subtracted from each incoming hit, from equipped armor/shields."""
+        return sum(i.damage_reduction for i in self.equipped.values())
 
     @property
     def light_radius(self) -> int:
@@ -280,9 +287,12 @@ class Player:
             dmg = sum(random.randint(1, spell.damage_sides) for _ in range(spell.damage_count))
             return f"You cast {spell.name} for {dmg} damage!", dmg
         if spell.effect == SpellEffect.BUFF_DEF:
-            bonus = sum(random.randint(1, spell.def_sides) for _ in range(spell.def_count))
-            self.temp_defense_bonus += bonus
-            return f"You cast {spell.name}! +{bonus} DEF for next combat.", 0
+            self.temp_defense_bonus += spell.def_bonus
+            self.temp_defense_turns = max(self.temp_defense_turns, spell.def_turns)
+            return f"You cast {spell.name}! +{spell.def_bonus} DEF for {spell.def_turns} turns.", 0
+        if spell.effect == SpellEffect.BUFF_ABSORB:
+            self.damage_absorb += spell.absorb_amount
+            return f"You cast {spell.name}! Absorbing up to {self.damage_absorb} damage.", 0
         if spell.effect == SpellEffect.BUFF_ATK:
             bonus = sum(random.randint(1, spell.atk_sides) for _ in range(spell.atk_count))
             self.temp_attack_bonus += bonus
@@ -360,6 +370,13 @@ class Player:
     @property
     def invuln_active(self) -> bool:
         return self.invuln_turns_remaining > 0
+
+    def tick_buffs(self) -> None:
+        """Advance timed buffs by one turn. Clears flat DEF when its timer expires."""
+        if self.temp_defense_turns > 0:
+            self.temp_defense_turns -= 1
+            if self.temp_defense_turns == 0:
+                self.temp_defense_bonus = 0
 
     def use_scroll(self, item: "Item") -> Tuple[str, int]:
         """

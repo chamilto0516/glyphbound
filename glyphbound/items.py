@@ -34,6 +34,7 @@ class Item:
     glyph: str          = "?"
     attack_bonus: int   = 0
     defense_bonus: int  = 0
+    damage_reduction: int = 0  # armor/shields: flat damage subtracted from each hit taken
     hp_bonus: int       = 0   # potions: restored on use, accessories: permanent max HP
     mp_bonus: int       = 0   # potions: restored on use, accessories: permanent max MP
     gold_value: int     = 0
@@ -53,6 +54,8 @@ class Item:
             parts.append(f"+{self.attack_bonus} ATK")
         if self.defense_bonus:
             parts.append(f"+{self.defense_bonus} DEF")
+        if self.damage_reduction:
+            parts.append(f"+{self.damage_reduction} DR")
         if self.hp_bonus and self.kind == ItemKind.POTION:
             parts.append(f"+{self.hp_bonus} HP")
         elif self.hp_bonus:
@@ -138,17 +141,17 @@ ITEM_MAUL = Item(
 # ── Warrior-only Heavy Armor ───────────────────────────────────────────────────
 ITEM_PLATE_MAIL = Item(
     name="Plate Mail", kind=ItemKind.ARMOR, glyph="]",
-    defense_bonus=6, gold_value=120, equip_slot=EquipSlot.ARMOR,
+    defense_bonus=3, damage_reduction=2, gold_value=120, equip_slot=EquipSlot.ARMOR,
     warrior_only=True,
 )
 ITEM_GREAT_HELM = Item(
     name="Great Helm", kind=ItemKind.ARMOR, glyph="]",
-    defense_bonus=4, gold_value=70, equip_slot=EquipSlot.HELMET,
+    defense_bonus=2, damage_reduction=1, gold_value=70, equip_slot=EquipSlot.HELMET,
     warrior_only=True,
 )
 ITEM_KITE_SHIELD = Item(
     name="Kite Shield", kind=ItemKind.ARMOR, glyph="]",
-    defense_bonus=4, gold_value=80, equip_slot=EquipSlot.SHIELD,
+    defense_bonus=1, damage_reduction=2, gold_value=80, equip_slot=EquipSlot.SHIELD,
     warrior_only=True,
 )
 
@@ -178,23 +181,23 @@ ITEM_LEATHER_CAP = Item(
 )
 ITEM_LEATHER_ARMOR = Item(
     name="Leather Armor", kind=ItemKind.ARMOR, glyph="]",
-    defense_bonus=2, gold_value=10, equip_slot=EquipSlot.ARMOR,
+    defense_bonus=1, damage_reduction=1, gold_value=10, equip_slot=EquipSlot.ARMOR,
 )
 ITEM_SMALL_SHIELD = Item(
     name="Small Shield", kind=ItemKind.ARMOR, glyph="]",
-    defense_bonus=1, gold_value=8, equip_slot=EquipSlot.SHIELD,
+    damage_reduction=1, gold_value=8, equip_slot=EquipSlot.SHIELD,
 )
 ITEM_CHAIN_MAIL = Item(
     name="Chain Mail", kind=ItemKind.ARMOR, glyph="]",
-    defense_bonus=3, gold_value=30, equip_slot=EquipSlot.ARMOR,
+    defense_bonus=2, damage_reduction=1, gold_value=30, equip_slot=EquipSlot.ARMOR,
 )
 ITEM_IRON_HELM = Item(
     name="Iron Helm", kind=ItemKind.ARMOR, glyph="]",
-    defense_bonus=2, gold_value=15, equip_slot=EquipSlot.HELMET,
+    defense_bonus=1, damage_reduction=1, gold_value=15, equip_slot=EquipSlot.HELMET,
 )
 ITEM_TOWER_SHIELD = Item(
     name="Tower Shield", kind=ItemKind.ARMOR, glyph="]",
-    defense_bonus=3, gold_value=25, equip_slot=EquipSlot.SHIELD,
+    defense_bonus=1, damage_reduction=2, gold_value=25, equip_slot=EquipSlot.SHIELD,
 )
 
 # ── Accessories ────────────────────────────────────────────────────────────────
@@ -220,7 +223,7 @@ ITEM_LEATHER_BOOTS = Item(
 )
 ITEM_IRON_BOOTS = Item(
     name="Iron Boots", kind=ItemKind.ARMOR, glyph="[",
-    defense_bonus=2, gold_value=40, equip_slot=EquipSlot.BOOTS,
+    defense_bonus=1, damage_reduction=1, gold_value=40, equip_slot=EquipSlot.BOOTS,
 )
 ITEM_LEATHER_GLOVES = Item(
     name="Leather Gloves", kind=ItemKind.ARMOR, glyph="[",
@@ -340,12 +343,12 @@ ITEM_SUNBLADE = Item(
 )
 ITEM_AEGIS_OF_DAWN = Item(
     name="Aegis of Dawn", kind=ItemKind.ARMOR, glyph="]",
-    defense_bonus=3, gold_value=160, equip_slot=EquipSlot.SHIELD,
+    defense_bonus=2, damage_reduction=1, gold_value=160, equip_slot=EquipSlot.SHIELD,
     is_unique=True, light_radius=8,
 )
 ITEM_STARLIT_HELM = Item(
     name="Starlit Helm", kind=ItemKind.ARMOR, glyph="]",
-    defense_bonus=2, gold_value=150, equip_slot=EquipSlot.HELMET,
+    defense_bonus=1, damage_reduction=1, gold_value=150, equip_slot=EquipSlot.HELMET,
     is_unique=True, light_radius=10,
 )
 

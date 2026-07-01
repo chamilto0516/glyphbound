@@ -371,7 +371,9 @@ class CombatScreen(Screen):
     def _end_combat(self, survived: bool, fled: bool, monster_killed: bool) -> None:
         # Clear temp buffs after combat
         self.player.temp_defense_bonus = 0
+        self.player.temp_defense_turns = 0
         self.player.temp_attack_bonus = 0
+        self.player.damage_absorb = 0
         self.player.invuln_turns_remaining = 0
         result = CombatResult(
             survived=survived,

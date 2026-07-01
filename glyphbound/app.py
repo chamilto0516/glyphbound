@@ -315,7 +315,7 @@ class StatsPanel(Static):
         lines = [
             f"[bold yellow]{p.name}[/bold yellow] the {p.char_class.value}",
             f"Lv {p.level}   Floor {self.floor_num}   [yellow]{p.gold}gp[/yellow]",
-            f"HP: [{hp_color}]{p.hp:>3}[/{hp_color}]/{max_hp_display:<3}  Atk/Def: {p.attack}/{p.defense}",
+            f"HP: [{hp_color}]{p.hp:>3}[/{hp_color}]/{max_hp_display:<3}  Atk/Def: {p.attack}/{p.defense}" + (f"  DR: {p.damage_reduction}" if p.damage_reduction else ""),
             f"XP: {xp_display}",
         ]
         if p.has_mp:
@@ -983,6 +983,7 @@ class GlyphboundApp(App):
         if not self.player or self.player.hp == 0:
             return
         self._monster_turns()
+        self.player.tick_buffs()
         self._decay_combat_buffs()
         self._check_torch_burnout()
         self.stats_panel.refresh()
@@ -1024,7 +1025,9 @@ class GlyphboundApp(App):
         """Clear temporary spell buffs once the player is no longer in combat."""
         if not self._in_combat():
             self.player.temp_defense_bonus = 0
+            self.player.temp_defense_turns = 0
             self.player.temp_attack_bonus = 0
+            self.player.damage_absorb = 0
 
     def _monster_turns(self) -> None:
         """Execute one AI turn for each monster on the map."""
@@ -1114,6 +1117,10 @@ class GlyphboundApp(App):
 
         if p.invuln_active:
             parts.append(f"[bold cyan]INVULN:{p.invuln_turns_remaining}[/bold cyan]")
+        if p.damage_absorb > 0:
+            parts.append(f"[bold cyan]ABSORB:{p.damage_absorb}[/bold cyan]")
+        if p.temp_defense_turns > 0:
+            parts.append(f"[bold cyan]DEF+{p.temp_defense_bonus}({p.temp_defense_turns}t)[/bold cyan]")
 
         # Second line: log scroll + quit hints, always present
         scroll_hint = "[dim](J/K) scroll log   (Q)uit[/dim]"
