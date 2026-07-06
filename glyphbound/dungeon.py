@@ -196,6 +196,28 @@ class Dungeon:
             default=None,
         )
 
+    def monsters_in_radius(self, cx: int, cy: int, radius: int) -> List[Tuple[Tuple[int, int], "Monster"]]:
+        """(pos, monster) pairs within Chebyshev `radius` of (cx, cy) — used for AOE resolution."""
+        return [
+            (pos, m) for pos, m in self.monsters.items()
+            if max(abs(pos[0] - cx), abs(pos[1] - cy)) <= radius
+        ]
+
+    def visible_monsters(self, px: int, py: int, max_range: int = 0) -> List[Tuple[Tuple[int, int], "Monster"]]:
+        """(pos, monster) pairs currently in self.visible, nearest-first, capped by max_range if >0.
+
+        Used to seed the targeting cursor and drive Tab-cycling.
+        """
+        hits = []
+        for pos, m in self.monsters.items():
+            if pos not in self.visible:
+                continue
+            if max_range and max(abs(pos[0] - px), abs(pos[1] - py)) > max_range:
+                continue
+            hits.append((pos, m))
+        hits.sort(key=lambda kv: abs(kv[0][0] - px) + abs(kv[0][1] - py))
+        return hits
+
     def move_party(self, dx: int, dy: int) -> bool:
         """Move party, return True if they moved, False if blocked."""
         nx, ny = self.party_x + dx, self.party_y + dy

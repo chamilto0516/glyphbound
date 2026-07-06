@@ -53,6 +53,9 @@ class Item:
     light_radius: int   = 0     # >0: emits light when equipped (or, for scrolls, when read)
     xp_bonus: int       = 0     # potions: XP granted on use; treasures: XP granted on pickup
     heal_on_pickup: int = 0     # treasure: HP restored immediately when stepped on
+    throwable: bool     = False  # weapons: usable as a ranged single-target attack via targeting mode
+    thrown_range: int   = 0      # max Chebyshev range when thrown; 0 = default (5)
+    thrown_consumed: bool = True  # True: item is lost/lands on the ground when thrown
 
     def __str__(self) -> str:
         parts = [self.name]
@@ -99,6 +102,7 @@ ITEM_SNEAKY_DAGGER = Item(
     attack_bonus=1, gold_value=4, equip_slot=EquipSlot.WEAPON,
     damage_sides=4, damage_count=1,   # 1d4 — Thief starter
     backstab_bonus=0.10,              # sharpens the Thief's backstab
+    throwable=True, thrown_range=5,
 )
 ITEM_ACOLYTE_MACE = Item(
     name="Acolyte Mace", kind=ItemKind.WEAPON, glyph="/",
@@ -109,6 +113,7 @@ ITEM_DAGGER = Item(
     name="Dagger", kind=ItemKind.WEAPON, glyph="/",
     attack_bonus=2, gold_value=5, equip_slot=EquipSlot.WEAPON,
     damage_sides=4, damage_count=1,   # 1d4
+    throwable=True, thrown_range=5,
 )
 ITEM_SHORT_SWORD = Item(
     name="Short Sword", kind=ItemKind.WEAPON, glyph="/",

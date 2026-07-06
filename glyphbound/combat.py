@@ -276,3 +276,72 @@ def apply_spell_to_monster(
             log.append(f"  {monster.name} dropped: {loot_names}")
 
     return log, killed, loot
+
+
+def apply_spell_aoe(
+    player: Player,
+    spell: Spell,
+    targets: List[Tuple[Tuple[int, int], Monster]],
+) -> Tuple[List[str], List[Tuple[Tuple[int, int], Monster]], List[Tuple[Tuple[int, int], Item]]]:
+    """
+    Apply one AOE (DAMAGE-effect) spell cast to every (pos, monster) pair in `targets`.
+    MP is deducted and the cast message logged exactly once via player.cast_spell(spell);
+    each target then takes an INDEPENDENT damage roll (not a shared pool split N ways).
+    An empty `targets` list still spends MP — the player chose to cast at that point.
+    Returns (log_lines, killed[(pos, monster)], loot[(pos, item)]).
+    Caller removes killed monsters from the dungeon and places dropped loot.
+    """
+    log: List[str] = []
+    killed: List[Tuple[Tuple[int, int], Monster]] = []
+    loot: List[Tuple[Tuple[int, int], Item]] = []
+
+    msg, _ = player.cast_spell(spell)
+    log.append(msg)
+
+    if not targets:
+        log.append("  The blast catches nothing.")
+        return log, killed, loot
+
+    any_kill = False
+    for pos, monster in targets:
+        dmg = sum(random.randint(1, spell.damage_sides) for _ in range(spell.damage_count))
+        monster.hp = max(0, monster.hp - dmg)
+        log.append(f"  {monster.name} is caught in the blast for {dmg}! HP: {monster.hp}/{monster.max_hp}")
+        if monster.hp == 0:
+            player.xp += monster.xp_value
+            player.stat_monsters_killed += 1
+            log.append(f"  {monster.name} is slain! +{monster.xp_value} XP")
+            drops = monster.drop_loot()
+            if drops:
+                loot_names = ", ".join(item.name for item in drops)
+                log.append(f"  {monster.name} dropped: {loot_names}")
+            for item in drops:
+                loot.append((pos, item))
+            killed.append((pos, monster))
+            any_kill = True
+
+    if any_kill:
+        leveled, level_msgs = player.check_level_up()
+        if leveled:
+            log.extend(level_msgs)
+
+    return log, killed, loot
+
+
+def execute_thrown_attack(player: Player, item: Item, monster: Monster) -> Tuple[List[str], bool]:
+    """
+    A single thrown-weapon attack against a non-adjacent monster. Rolls to-hit like
+    melee (thrown weapons are physical, unlike auto-hit spells) via _attacker_hits,
+    and reuses roll_damage(item) for the damage die. Mutates monster.hp in place.
+    Returns (log_lines, killed). Does not grant XP/loot — caller handles that via
+    the existing _reward_kill helper, mirroring how execute_player_attack works.
+    """
+    log: List[str] = []
+    natural = random.randint(1, 10)
+    if not _attacker_hits(natural, player.attack, monster.defense):
+        log.append(f"  Your thrown {item.name} sails past the {monster.name}!")
+        return log, False
+    dmg = roll_damage(item)
+    monster.hp = max(0, monster.hp - dmg)
+    log.append(f"  Your thrown {item.name} hits for {dmg}! {monster.name} HP: {monster.hp}/{monster.max_hp}")
+    return log, monster.hp == 0

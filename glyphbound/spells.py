@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from .fov import SPELL_RADIUS
+from .targeting import TargetShape
 
 
 class SpellEffect(Enum):
@@ -37,10 +38,16 @@ class Spell:
     heal_count: int   = 1
     light_radius: int = 0   # ILLUMINATE: tiles lit for the floor
     description: str  = ""
+    target_shape: TargetShape = TargetShape.SINGLE  # SINGLE/POINT/SELF; irrelevant for non-damage effects
+    spell_range: int = 0     # 0 = unlimited within FOV; else explicit Chebyshev tile cap
+    aoe_radius: int = 0      # only meaningful when target_shape is POINT or SELF
 
     def damage_label(self) -> str:
         if self.effect == SpellEffect.DAMAGE:
-            return f"{self.damage_count}d{self.damage_sides}"
+            base = f"{self.damage_count}d{self.damage_sides}"
+            if self.aoe_radius:
+                return f"{base} (radius {self.aoe_radius})"
+            return base
         if self.effect == SpellEffect.BUFF_DEF:
             return f"+{self.def_bonus} DEF ({self.def_turns}t)"
         if self.effect == SpellEffect.BUFF_ABSORB:
@@ -102,7 +109,10 @@ SPELL_FIREBALL = Spell(
     effect=SpellEffect.DAMAGE,
     min_level=2,
     damage_sides=10, damage_count=1,
-    description="A burst of fire. 1d10 damage.",
+    description="A burst of fire centered on a chosen point. 1d10 damage to everything within 2 tiles.",
+    target_shape=TargetShape.POINT,
+    spell_range=8,
+    aoe_radius=2,
 )
 
 SPELL_ILLUMINATION = Spell(
@@ -138,7 +148,9 @@ SPELL_METEOR_SWARM = Spell(
     effect=SpellEffect.DAMAGE,
     min_level=5,
     damage_sides=8, damage_count=3,
-    description="Raining fire from above. 3d8 damage.",
+    description="Meteors rain down around you. 3d8 damage to everything within 3 tiles.",
+    target_shape=TargetShape.SELF,
+    aoe_radius=3,
 )
 
 SPELL_ARCANE_BLAST = Spell(

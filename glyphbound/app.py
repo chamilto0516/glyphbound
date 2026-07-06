@@ -9,10 +9,12 @@ import logging
 import random
 import re
 
-from .combat import apply_spell_to_monster
+from .combat import apply_spell_to_monster, apply_spell_aoe, execute_thrown_attack
 from .combat_screen import (
     PotionSelectScreen,
     ScrollSelectScreen,
+    RangedOptionsScreen,
+    RangedOption,
 )
 from .dungeon import DOOR_CLOSED, SHOP, STAIR_DOWN, generate_dungeon
 from .shop_screen import ShopScreen
@@ -30,6 +32,7 @@ def _item_label(item: "Item | None", *, lit: bool = False) -> str:
     return item.name
 from .player import CharacterClass, Player
 from .spells import Spell, SpellEffect
+from .targeting import PendingRangedAction, TargetingSession, TargetShape
 from .traps import Trap
 
 
@@ -731,6 +734,7 @@ class GlyphboundApp(App):
         ("c", "scroll",          "Scroll"),
         ("f", "flee",            "Flee"),
         ("x", "disarm_trap",     "Disarm trap"),
+        ("t", "ranged",          "Ranged attack"),
         ("k", "scroll_log_up",   "Scroll log up"),
         ("j", "scroll_log_down", "Scroll log down"),
         ("pageup",   "scroll_log_up",   "Scroll log up"),
@@ -748,6 +752,7 @@ class GlyphboundApp(App):
         self.reveal_all = reveal_all   # --light debug flag
         self._combat_damage_taken = 0  # damage accumulated in the current engagement
         self._torch_at_risk = True     # re-armed each combat; one burnout roll per combat
+        self._targeting: TargetingSession | None = None
 
     def compose(self) -> ComposeResult:
         self.dungeon = generate_dungeon(floor=1, place_up_stair=False)
@@ -790,10 +795,16 @@ class GlyphboundApp(App):
         title.update(f"Glyphbound — {self.dungeon.theme.name}  [Floor {self.dungeon.floor}]")
         title.styles.color = self.dungeon.theme.title_color
 
-    def action_move_up(self)    -> None: self._move(0, -1)
-    def action_move_down(self)  -> None: self._move(0,  1)
-    def action_move_left(self)  -> None: self._move(-1, 0)
-    def action_move_right(self) -> None: self._move(1,  0)
+    def action_move_up(self)    -> None: self._move_or_aim(0, -1)
+    def action_move_down(self)  -> None: self._move_or_aim(0,  1)
+    def action_move_left(self)  -> None: self._move_or_aim(-1, 0)
+    def action_move_right(self) -> None: self._move_or_aim(1,  0)
+
+    def _move_or_aim(self, dx: int, dy: int) -> None:
+        if self._targeting is not None:
+            self._aim_cursor(dx, dy)
+            return
+        self._move(dx, dy)
 
     def action_scroll_log_up(self) -> None:
         if len(self.screen_stack) == 1:
@@ -1077,6 +1088,13 @@ class GlyphboundApp(App):
             bar.update("")
             return
 
+        if self._targeting is not None:
+            bar.update(
+                "[bold]WASD[/bold] aim   [bold]Tab[/bold] cycle target   "
+                "[bold]Enter[/bold] fire   [bold]Esc[/bold] cancel"
+            )
+            return
+
         engaged = self._in_combat()
         parts: list[str] = []
 
@@ -1108,6 +1126,10 @@ class GlyphboundApp(App):
         # Flee — only meaningful while engaged
         if engaged:
             parts.append("[bold](F)[/bold]lee")
+
+        # Ranged — any affordable damage/turn-undead spell or a throwable item
+        if self._ranged_options():
+            parts.append("[bold](T)[/bold]arget")
 
         # Items on the floor
         if self.dungeon.items_at(self.dungeon.party_x, self.dungeon.party_y):
@@ -1156,6 +1178,7 @@ class GlyphboundApp(App):
             self.player is not None
             and self.player.hp > 0
             and len(self.screen_stack) == 1
+            and self._targeting is None
         )
 
     def action_get_item(self) -> None:
@@ -1211,29 +1234,251 @@ class GlyphboundApp(App):
             return  # cancelled — no turn consumed
 
         if spell.effect in (SpellEffect.DAMAGE, SpellEffect.TURN_UNDEAD):
-            nearest = self.dungeon.nearest_monster()
-            if nearest is None:
-                self.message_log.add("No monsters in range.")
-                return  # nothing happened — don't burn a turn
-            pos, monster = nearest
+            action = PendingRangedAction(kind="spell", spell=spell, label=spell.name)
+            if spell.target_shape == TargetShape.SELF:
+                self._resolve_self_aoe_spell(action)
+            else:
+                self._begin_targeting(
+                    action,
+                    spell.target_shape,
+                    spell.spell_range,
+                    spell.aoe_radius,
+                )
+            return  # turn cost (if any) is deferred to targeting confirm / self-AOE resolve
+
+        msg, sentinel = self.player.cast_spell(spell)
+        self.message_log.add(msg)
+        if sentinel == -1:
+            self._detect_magic_traps()
+        elif sentinel == -2:
+            self.dungeon.ambient_light_radius = max(
+                self.dungeon.ambient_light_radius, spell.light_radius
+            )
+
+        self._resolve_turn()
+
+    # ── Ranged targeting ──────────────────────────────────────────────────────
+
+    def action_ranged(self) -> None:
+        if not self._can_act():
+            return
+        options = self._ranged_options()
+        if not options:
+            self.message_log.add("You have no ranged attacks available.")
+            return
+        if len(options) == 1:
+            self._ranged_option_chosen(options[0])
+        else:
+            self.push_screen(RangedOptionsScreen(options), callback=self._ranged_option_chosen)
+
+    def _ranged_options(self) -> list:
+        options = []
+        for spell in self.player.spells:
+            if spell.effect not in (SpellEffect.DAMAGE, SpellEffect.TURN_UNDEAD):
+                continue
+            if self.player.mp < spell.mp_cost:
+                continue
+            options.append(RangedOption(
+                label=f"{spell.name}  ({spell.mp_cost} MP)  {spell.damage_label()}",
+                kind="spell",
+                spell=spell,
+            ))
+        seen_items = set()
+        candidates = list(self.player.inventory) + [
+            self.player.equipped.get(EquipSlot.WEAPON.value),
+            self.player.equipped.get(EquipSlot.SHIELD.value),
+        ]
+        for item in candidates:
+            if item is not None and item.throwable and id(item) not in seen_items:
+                seen_items.add(id(item))
+                options.append(RangedOption(
+                    label=f"Throw {item.name}",
+                    kind="thrown_weapon",
+                    item=item,
+                ))
+        return options
+
+    def _ranged_option_chosen(self, option: "RangedOption | None") -> None:
+        if option is None:
+            return  # cancelled — no turn consumed
+        if option.kind == "spell":
+            spell = option.spell
+            action = PendingRangedAction(kind="spell", spell=spell, label=spell.name)
+            if spell.target_shape == TargetShape.SELF:
+                self._resolve_self_aoe_spell(action)
+            else:
+                self._begin_targeting(action, spell.target_shape, spell.spell_range, spell.aoe_radius)
+        else:
+            item = option.item
+            action = PendingRangedAction(kind="thrown_weapon", item=item, label=f"Throw {item.name}")
+            self._begin_targeting(action, TargetShape.SINGLE, item.thrown_range or 5, 0)
+
+    def _begin_targeting(self, action: PendingRangedAction, shape: TargetShape,
+                          max_range: int, aoe_radius: int) -> None:
+        px, py = self.dungeon.party_x, self.dungeon.party_y
+        monster_cycle = self.dungeon.visible_monsters(px, py, max_range or 0)
+        if monster_cycle:
+            cursor_x, cursor_y = monster_cycle[0][0]
+            cycle_index = 0
+        else:
+            cursor_x, cursor_y = px, py
+            cycle_index = -1
+        session = TargetingSession(
+            action=action,
+            shape=shape,
+            max_range=max_range or 0,
+            aoe_radius=aoe_radius,
+            cursor_x=cursor_x,
+            cursor_y=cursor_y,
+            monster_cycle=monster_cycle,
+            cycle_index=cycle_index,
+        )
+        self._targeting = session
+        self._push_targeting_overlay()
+        self._refresh_action_bar()
+
+    def _push_targeting_overlay(self) -> None:
+        session = self._targeting
+        if session is None:
+            self.map_view.targeting_cursor = None
+            self.map_view.targeting_aoe_radius = 0
+            self.map_view.targeting_valid = True
+        else:
+            self.map_view.targeting_cursor = (session.cursor_x, session.cursor_y)
+            self.map_view.targeting_aoe_radius = session.aoe_radius
+            self.map_view.targeting_valid = self._targeting_is_valid(session)
+        self.map_view.refresh()
+
+    def _targeting_is_valid(self, session: TargetingSession) -> bool:
+        if session.shape != TargetShape.SINGLE:
+            return True
+        return self.dungeon.monster_at(session.cursor_x, session.cursor_y) is not None
+
+    def _aim_cursor(self, dx: int, dy: int) -> None:
+        session = self._targeting
+        if session is None:
+            return
+        px, py = self.dungeon.party_x, self.dungeon.party_y
+        nx, ny = session.cursor_x + dx, session.cursor_y + dy
+        if session.max_range and max(abs(nx - px), abs(ny - py)) > session.max_range:
+            return
+        if (nx, ny) not in self.dungeon.visible:
+            return
+        session.cursor_x, session.cursor_y = nx, ny
+        session.cycle_index = -1
+        self._push_targeting_overlay()
+
+    def action_target_cycle(self) -> None:
+        session = self._targeting
+        if session is None or not session.monster_cycle:
+            return
+        session.cycle_index = (session.cycle_index + 1) % len(session.monster_cycle)
+        pos, _ = session.monster_cycle[session.cycle_index]
+        session.cursor_x, session.cursor_y = pos
+        self._push_targeting_overlay()
+
+    def on_key(self, event) -> None:
+        if self._targeting is None:
+            return
+        if event.key == "escape":
+            self._cancel_targeting()
+            event.stop()
+        elif event.key in ("enter", "space"):
+            self._confirm_targeting()
+            event.stop()
+        elif event.key == "tab":
+            # Textual's default Screen binding maps "tab" to focus-next, which
+            # would otherwise steal this key before action_target_cycle fires.
+            self.action_target_cycle()
+            event.stop()
+            event.prevent_default()
+
+    def _cancel_targeting(self) -> None:
+        self._targeting = None
+        self._push_targeting_overlay()
+        self._refresh_action_bar()
+
+    def _confirm_targeting(self) -> None:
+        session = self._targeting
+        if session is None:
+            return
+        pos = (session.cursor_x, session.cursor_y)
+        px, py = self.dungeon.party_x, self.dungeon.party_y
+        if session.max_range and max(abs(pos[0] - px), abs(pos[1] - py)) > session.max_range:
+            self.message_log.add("Out of range.")
+            return  # stay in targeting — free retry
+        if pos not in self.dungeon.visible:
+            self.message_log.add("You can't see a target there.")
+            return  # stay in targeting — free retry
+
+        if session.shape == TargetShape.SINGLE:
+            monster = self.dungeon.monster_at(*pos)
+            self._resolve_single_target(session.action, pos, monster)
+        else:  # POINT
+            targets = self.dungeon.monsters_in_radius(pos[0], pos[1], session.aoe_radius)
+            self._resolve_aoe(session.action, targets)
+
+        self._targeting = None
+        self._push_targeting_overlay()
+        self._refresh_action_bar()
+        self._resolve_turn()
+
+    def _resolve_single_target(self, action: PendingRangedAction, pos, monster) -> None:
+        if action.kind == "spell":
+            spell = action.spell
+            if monster is None:
+                # Confirmed shot at an empty tile — still spends MP (per the
+                # "whiff costs a turn+resource" rule), no monster to check/kill.
+                msg, _ = self.player.cast_spell(spell)
+                self.message_log.add(msg)
+                self.message_log.add("  The spell finds no target.")
+                return
             log, killed, loot = apply_spell_to_monster(self.player, spell, monster)
             for line in log:
                 self.message_log.add(line)
             if killed:
                 self.dungeon.remove_monster(*pos)
-                # Place loot drops on the ground
                 for item in loot:
                     self.dungeon.place_item(*pos, item)
-        else:
-            msg, sentinel = self.player.cast_spell(spell)
-            self.message_log.add(msg)
-            if sentinel == -1:
-                self._detect_magic_traps()
-            elif sentinel == -2:
-                self.dungeon.ambient_light_radius = max(
-                    self.dungeon.ambient_light_radius, spell.light_radius
-                )
+        else:  # thrown_weapon
+            item = action.item
+            if item in self.player.inventory:
+                self.player.inventory.remove(item)
+            else:
+                for slot, equipped_item in list(self.player.equipped.items()):
+                    if equipped_item is item:
+                        del self.player.equipped[slot]
+                        break
+            if monster is None:
+                self.message_log.add(f"Your {item.name} clatters to the floor, hitting nothing.")
+                self.dungeon.place_item(*pos, item)
+                return
+            log, killed = execute_thrown_attack(self.player, item, monster)
+            for line in log:
+                self.message_log.add(line)
+            if killed:
+                self._reward_kill(monster, *pos)
+            else:
+                self.dungeon.place_item(*pos, item)
 
+    def _resolve_aoe(self, action: PendingRangedAction, targets) -> None:
+        spell = action.spell
+        log, killed, loot = apply_spell_aoe(self.player, spell, targets)
+        for line in log:
+            self.message_log.add(line)
+        for pos, _monster in killed:
+            self.dungeon.remove_monster(*pos)
+        for pos, item in loot:
+            self.dungeon.place_item(*pos, item)
+
+    def _resolve_self_aoe_spell(self, action: PendingRangedAction) -> None:
+        spell = action.spell
+        if self.player.mp < spell.mp_cost:
+            self.message_log.add(f"Not enough MP to cast {spell.name}. (need {spell.mp_cost})")
+            return  # no turn cost — spell never went off
+        px, py = self.dungeon.party_x, self.dungeon.party_y
+        targets = self.dungeon.monsters_in_radius(px, py, spell.aoe_radius)
+        self._resolve_aoe(action, targets)
         self._resolve_turn()
 
     def action_potion(self) -> None:

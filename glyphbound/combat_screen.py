@@ -29,6 +29,72 @@ class CombatResult:
     loot: List[Item] = field(default_factory=list)
 
 
+@dataclass
+class RangedOption:
+    label: str
+    kind: str  # "spell" | "thrown_weapon"
+    spell: Optional[Spell] = None
+    item: Optional[Item] = None
+
+
+# ── Ranged-options screen ──────────────────────────────────────────────────────
+
+class RangedOptionsScreen(Screen):
+    CSS = """
+    RangedOptionsScreen {
+        background: rgba(0,0,0,0.85);
+        align: center middle;
+    }
+
+    #rng-box {
+        width: 52;
+        height: auto;
+        border: double ansi_bright_green;
+        padding: 1 2;
+        background: black;
+    }
+
+    #rng-title {
+        text-align: center;
+        text-style: bold;
+        color: ansi_bright_green;
+        margin-bottom: 1;
+    }
+
+    #rng-hint {
+        color: #888888;
+        margin-top: 1;
+    }
+
+    .rng-line {
+        color: white;
+    }
+    """
+
+    def __init__(self, options: List[RangedOption]) -> None:
+        super().__init__()
+        self.options = options
+
+    def compose(self) -> ComposeResult:
+        with Static(id="rng-box"):
+            yield Static("Ranged Attack", id="rng-title")
+            if not self.options:
+                yield Static("[dim](nothing to use)[/dim]", classes="rng-line")
+            else:
+                for i, opt in enumerate(self.options):
+                    yield Static(f"[bold]{i+1}.[/bold]  {opt.label}", classes="rng-line")
+            yield Static("Press number to choose. Esc to cancel.", id="rng-hint")
+
+    def on_key(self, event) -> None:
+        if event.key == "escape":
+            self.dismiss(None)
+            return
+        if event.character and event.character.isdigit():
+            idx = int(event.character) - 1
+            if 0 <= idx < len(self.options):
+                self.dismiss(self.options[idx])
+
+
 # ── Potion-select screen ──────────────────────────────────────────────────────
 
 class PotionSelectScreen(Screen):
