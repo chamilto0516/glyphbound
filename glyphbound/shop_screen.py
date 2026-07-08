@@ -96,7 +96,10 @@ class ShopScreen(Screen):
         price = item.gold_value
         if self.player.gold >= price:
             self.player.gold -= price
-            self.player.inventory.append(item)
+            if item.kind == ItemKind.AMMO:
+                self.player.add_ammo(item.ammo_type, item.ammo_amount)
+            else:
+                self.player.inventory.append(item)
             self.player.stat_items_found += 1
             self._status = f"[green]Bought {item.name} for {price} gp.[/green]"
         else:
@@ -141,4 +144,8 @@ def _item_label(item: Item) -> str:
         parts.append(f"{item.damage_count}d{item.damage_sides}")
     elif item.kind == ItemKind.SCROLL and item.hp_bonus:
         parts.append(f"+{item.hp_bonus} HP")
+    if item.kind == ItemKind.AMMO:
+        parts.append(f"+{item.ammo_amount} {item.ammo_type}s")
+    elif item.ranged and item.ammo_type:
+        parts.append(f"uses {item.ammo_type}s")
     return "  ".join(parts)

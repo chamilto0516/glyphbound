@@ -92,6 +92,7 @@ class Player:
 
     inventory: List[Item]             = field(default_factory=list)
     equipped:  Dict[str, Item]        = field(default_factory=dict)  # slot name → Item
+    ammo:      Dict[str, int]         = field(default_factory=dict)  # "arrow"/"bolt"/"stone" → count
     spells:    List[Spell]            = field(default_factory=list)
     temp_defense_bonus: int           = 0   # flat DEF from timed buffs; cleared when timer runs out
     temp_defense_turns: int           = 0   # turns remaining on temp_defense_bonus
@@ -170,9 +171,27 @@ class Player:
         """Bonus max MP from equipped accessories."""
         return sum(i.mp_bonus for i in self.equipped.values() if i.kind != ItemKind.POTION)
 
+    # ── Ammo ────────────────────────────────────────────────────────────────────
+
+    def get_ammo(self, ammo_type: str) -> int:
+        return self.ammo.get(ammo_type, 0)
+
+    def add_ammo(self, ammo_type: str, amount: int) -> None:
+        self.ammo[ammo_type] = self.get_ammo(ammo_type) + amount
+
+    def spend_ammo(self, ammo_type: str) -> bool:
+        if self.get_ammo(ammo_type) <= 0:
+            return False
+        self.ammo[ammo_type] -= 1
+        return True
+
     # ── Inventory actions ──────────────────────────────────────────────────────
 
     def pick_up(self, item: Item) -> str:
+        if item.kind == ItemKind.AMMO:
+            self.add_ammo(item.ammo_type, item.ammo_amount)
+            self.stat_items_found += 1
+            return f"Picked up {item.name}. (+{item.ammo_amount} {item.ammo_type}s)"
         self.inventory.append(item)
         self.stat_items_found += 1
         if item.kind == ItemKind.TREASURE:
@@ -210,6 +229,10 @@ class Player:
             return f"{item.name} requires martial training — Warriors only.", None
         if item.thief_only and self.char_class != CharacterClass.THIEF:
             return f"{item.name} answers only to nimble hands — Thieves only.", None
+        if item.wizard_only and self.char_class != CharacterClass.WIZARD:
+            return f"{item.name} hums with arcane power beyond you — Wizards only.", None
+        if item.cleric_only and self.char_class != CharacterClass.CLERIC:
+            return f"{item.name} answers only to the devout — Clerics only.", None
 
         # ── Determine actual slot key ──────────────────────────────────────────
         if item.equip_slot == EquipSlot.RING:

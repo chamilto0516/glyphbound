@@ -9,7 +9,7 @@ import logging
 import random
 import re
 
-from .combat import apply_spell_to_monster, apply_spell_aoe, execute_thrown_attack
+from .combat import apply_spell_to_monster, apply_spell_aoe, execute_thrown_attack, execute_ranged_weapon_attack
 from .combat_screen import (
     PotionSelectScreen,
     ScrollSelectScreen,
@@ -30,6 +30,14 @@ def _item_label(item: "Item | None", *, lit: bool = False) -> str:
     if lit and item.name == "Torch":
         return "Torch (lit)"
     return item.name
+
+
+def _ammo_line(player: "Player") -> str:
+    """Stats-panel line listing nonzero ammo counts, or '' if the player carries none."""
+    parts = [f"{ammo_type.title()}s {count}" for ammo_type, count in player.ammo.items() if count > 0]
+    if not parts:
+        return ""
+    return f"[dim]Ammo:[/dim] {' · '.join(parts)}"
 from .player import CharacterClass, Player
 from .spells import Spell, SpellEffect
 from .targeting import PendingRangedAction, TargetingSession, TargetShape
@@ -331,6 +339,9 @@ class StatsPanel(Static):
             lines.append("[dim]Rage: ready[/dim]")
         else:
             lines.append("")
+        ammo_line = _ammo_line(p)
+        if ammo_line:
+            lines.append(ammo_line)
         lines.append("[dim]────────────────────────[/dim]")
         # equipped slots
         weapon    = p.equipped.get(EquipSlot.WEAPON.value)
@@ -1296,6 +1307,27 @@ class GlyphboundApp(App):
                     kind="thrown_weapon",
                     item=item,
                 ))
+        seen_ranged = set()
+        for ranged_weapon in (
+            self.player.equipped.get(EquipSlot.WEAPON.value),
+            self.player.equipped.get(EquipSlot.SHIELD.value),
+        ):
+            if ranged_weapon is None or not ranged_weapon.ranged or id(ranged_weapon) in seen_ranged:
+                continue
+            seen_ranged.add(id(ranged_weapon))
+            if ranged_weapon.ammo_type is None:
+                options.append(RangedOption(
+                    label=f"Shoot {ranged_weapon.name}",
+                    kind="ranged_weapon",
+                    item=ranged_weapon,
+                ))
+            elif self.player.get_ammo(ranged_weapon.ammo_type) > 0:
+                ammo_left = self.player.get_ammo(ranged_weapon.ammo_type)
+                options.append(RangedOption(
+                    label=f"Shoot {ranged_weapon.name}  ({ranged_weapon.ammo_type.title()}s: {ammo_left})",
+                    kind="ranged_weapon",
+                    item=ranged_weapon,
+                ))
         return options
 
     def _ranged_option_chosen(self, option: "RangedOption | None") -> None:
@@ -1308,10 +1340,14 @@ class GlyphboundApp(App):
                 self._resolve_self_aoe_spell(action)
             else:
                 self._begin_targeting(action, spell.target_shape, spell.spell_range, spell.aoe_radius)
-        else:
+        elif option.kind == "thrown_weapon":
             item = option.item
             action = PendingRangedAction(kind="thrown_weapon", item=item, label=f"Throw {item.name}")
             self._begin_targeting(action, TargetShape.SINGLE, item.thrown_range or 5, 0)
+        else:  # ranged_weapon
+            item = option.item
+            action = PendingRangedAction(kind="ranged_weapon", item=item, label=f"Shoot {item.name}")
+            self._begin_targeting(action, TargetShape.SINGLE, item.ranged_range or 7, 0)
 
     def _begin_targeting(self, action: PendingRangedAction, shape: TargetShape,
                           max_range: int, aoe_radius: int) -> None:
@@ -1440,7 +1476,7 @@ class GlyphboundApp(App):
                 self.dungeon.remove_monster(*pos)
                 for item in loot:
                     self.dungeon.place_item(*pos, item)
-        else:  # thrown_weapon
+        elif action.kind == "thrown_weapon":
             item = action.item
             if item in self.player.inventory:
                 self.player.inventory.remove(item)
@@ -1460,6 +1496,18 @@ class GlyphboundApp(App):
                 self._reward_kill(monster, *pos)
             else:
                 self.dungeon.place_item(*pos, item)
+        else:  # ranged_weapon
+            weapon = action.item
+            if weapon.ammo_type is not None:
+                self.player.spend_ammo(weapon.ammo_type)
+            if monster is None:
+                self.message_log.add(f"Your {weapon.name} shot flies past, hitting nothing.")
+                return
+            log, killed = execute_ranged_weapon_attack(self.player, weapon, monster)
+            for line in log:
+                self.message_log.add(line)
+            if killed:
+                self._reward_kill(monster, *pos)
 
     def _resolve_aoe(self, action: PendingRangedAction, targets) -> None:
         spell = action.spell

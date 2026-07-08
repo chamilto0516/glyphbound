@@ -12,6 +12,7 @@ class ItemKind(Enum):
     POTION   = "Potion"
     TREASURE = "Treasure"
     SCROLL   = "Scroll"
+    AMMO     = "Ammo"
 
 
 class EquipSlot(Enum):
@@ -56,6 +57,13 @@ class Item:
     throwable: bool     = False  # weapons: usable as a ranged single-target attack via targeting mode
     thrown_range: int   = 0      # max Chebyshev range when thrown; 0 = default (5)
     thrown_consumed: bool = True  # True: item is lost/lands on the ground when thrown
+    ranged: bool        = False  # weapons: persistent ranged weapon, fired via the Ranged menu
+    ranged_range: int   = 0      # max Chebyshev range when fired; 0 = default (7)
+    ammo_type: str | None = None  # weapons: ammo pool consumed per shot (None = self-powered)
+                                   # ammo items: which pool a purchase refills
+    ammo_amount: int    = 0      # ammo items: how much ammo a single purchase grants
+    wizard_only: bool   = False  # requires Wizard class to equip
+    cleric_only: bool   = False  # requires Cleric class to equip
 
     def __str__(self) -> str:
         parts = [self.name]
@@ -146,6 +154,39 @@ ITEM_BATTLE_AXE = Item(
     damage_sides=6, damage_count=2,   # 2d6
 )
 
+# ── Mundane Ranged Weapons (ammo-based) ───────────────────────────────────────
+ITEM_SLING = Item(
+    name="Sling", kind=ItemKind.WEAPON, glyph=")",
+    attack_bonus=1, gold_value=10, equip_slot=EquipSlot.WEAPON,
+    damage_sides=4, damage_count=1,   # 1d4
+    ranged=True, ammo_type="stone",
+)
+ITEM_HAND_CROSSBOW = Item(
+    name="Hand Crossbow", kind=ItemKind.WEAPON, glyph=")",
+    attack_bonus=2, gold_value=25, equip_slot=EquipSlot.WEAPON,
+    damage_sides=6, damage_count=1,   # 1d6
+    ranged=True, ammo_type="bolt",
+)
+ITEM_SHORTBOW = Item(
+    name="Shortbow", kind=ItemKind.WEAPON, glyph=")",
+    attack_bonus=2, gold_value=25, equip_slot=EquipSlot.WEAPON,
+    damage_sides=6, damage_count=1,   # 1d6
+    two_handed=True, ranged=True, ammo_type="arrow",
+)
+ITEM_LONGBOW = Item(
+    name="Longbow", kind=ItemKind.WEAPON, glyph=")",
+    attack_bonus=3, gold_value=55, equip_slot=EquipSlot.WEAPON,
+    damage_sides=8, damage_count=1,   # 1d8
+    two_handed=True, ranged=True, ammo_type="arrow",
+)
+ITEM_HEAVY_CROSSBOW = Item(
+    name="Heavy Crossbow", kind=ItemKind.WEAPON, glyph=")",
+    attack_bonus=4, gold_value=75, equip_slot=EquipSlot.WEAPON,
+    damage_sides=6, damage_count=2,   # 2d6
+    two_handed=True, ranged=True, ammo_type="bolt",
+    warrior_only=True,
+)
+
 # ── Warrior-only Heavy Weapons ────────────────────────────────────────────────
 ITEM_GREAT_SWORD = Item(
     name="Great Sword", kind=ItemKind.WEAPON, glyph="/",
@@ -208,6 +249,33 @@ ITEM_GORECLEAVER = Item(
     attack_bonus=8, gold_value=250, equip_slot=EquipSlot.WEAPON,
     damage_sides=12, damage_count=2,   # 2d12
     is_unique=True, warrior_only=True, two_handed=True,
+)
+
+# ── Named/Unique Ranged Weapons (magical, self-powered — no ammo) ────────────
+ITEM_WAND_OF_SPARKS = Item(
+    name="Wand of Sparks", kind=ItemKind.WEAPON, glyph=")",
+    attack_bonus=3, gold_value=100, equip_slot=EquipSlot.WEAPON,
+    damage_sides=6, damage_count=1,   # 1d6 arcane
+    ranged=True, is_unique=True, wizard_only=True,
+)
+ITEM_RADIANT_SLING = Item(
+    name="Radiant Sling", kind=ItemKind.WEAPON, glyph=")",
+    attack_bonus=4, gold_value=140, equip_slot=EquipSlot.WEAPON,
+    damage_sides=8, damage_count=1,   # 1d8
+    undead_bonus_sides=6, undead_bonus_count=2,  # +2d6 radiant vs undead
+    ranged=True, is_unique=True, cleric_only=True,
+)
+ITEM_WHISPERING_BOW = Item(
+    name="Whispering Bow", kind=ItemKind.WEAPON, glyph=")",
+    attack_bonus=5, gold_value=180, equip_slot=EquipSlot.WEAPON,
+    damage_sides=8, damage_count=1,   # 1d8
+    ranged=True, is_unique=True, thief_only=True,
+)
+ITEM_STORMBOLT_CROSSBOW = Item(
+    name="Stormbolt Crossbow", kind=ItemKind.WEAPON, glyph=")",
+    attack_bonus=6, gold_value=220, equip_slot=EquipSlot.WEAPON,
+    damage_sides=8, damage_count=2,   # 2d8
+    two_handed=True, ranged=True, is_unique=True, warrior_only=True,
 )
 
 ITEM_LEATHER_CAP = Item(
@@ -347,6 +415,20 @@ ITEM_BLESSED_CHALICE = Item(
     gold_value=15, heal_on_pickup=5,
 )
 
+# ── Ammo ───────────────────────────────────────────────────────────────────────
+ITEM_POUCH_OF_STONES = Item(
+    name="Pouch of Stones", kind=ItemKind.AMMO, glyph="=",
+    gold_value=8, ammo_type="stone", ammo_amount=20,
+)
+ITEM_QUIVER_OF_ARROWS = Item(
+    name="Quiver of Arrows", kind=ItemKind.AMMO, glyph="=",
+    gold_value=15, ammo_type="arrow", ammo_amount=20,
+)
+ITEM_CASE_OF_BOLTS = Item(
+    name="Case of Bolts", kind=ItemKind.AMMO, glyph="=",
+    gold_value=18, ammo_type="bolt", ammo_amount=20,
+)
+
 # ── Scrolls ────────────────────────────────────────────────────────────────────
 ITEM_SCROLL_FIREBALL = Item(
     name="Scroll of Fireball", kind=ItemKind.SCROLL, glyph="?",
@@ -429,16 +511,25 @@ def shop_stock(floor: int) -> list:
     # Basic weapons available from the very first floor so no class is stuck
     # flailing with a starter weapon against early monsters.
     stock += [ITEM_DAGGER, ITEM_STAFF, ITEM_MACE, ITEM_SHORT_SWORD]
+    # Ammo is always purchasable — a quiver/pouch/case is only useful once a
+    # matching ranged weapon is equipped, but never gating it keeps restocking simple.
+    stock += [ITEM_POUCH_OF_STONES, ITEM_QUIVER_OF_ARROWS, ITEM_CASE_OF_BOLTS]
+    stock += [ITEM_SLING]
     if floor >= 2:
         stock += [ITEM_ELIXIR_VITALITY, ITEM_ELIXIR_CLARITY]
+        stock += [ITEM_HAND_CROSSBOW, ITEM_SHORTBOW]
     if floor >= 3:
         stock += [ITEM_BROAD_SWORD]
+        stock += [ITEM_WAND_OF_SPARKS]
     if floor >= 4:
         stock += [ITEM_LEATHER_ARMOR, ITEM_SMALL_SHIELD, ITEM_IRON_HELM, ITEM_LEATHER_BOOTS, ITEM_LEATHER_GLOVES]
+        stock += [ITEM_LONGBOW, ITEM_RADIANT_SLING]
     if floor >= 5:
         stock += [ITEM_LONG_SWORD, ITEM_RING_OF_PROTECTION]
+        stock += [ITEM_HEAVY_CROSSBOW, ITEM_WHISPERING_BOW]
     if floor >= 6:
         stock += [ITEM_CHAIN_MAIL, ITEM_SCROLL_HEAL, ITEM_SCROLL_INVULNERABILITY, ITEM_IRON_BOOTS, ITEM_GAUNTLETS]
+        stock += [ITEM_STORMBOLT_CROSSBOW]
     if floor >= 7:
         stock += [ITEM_BATTLE_AXE, ITEM_SCROLL_FIREBALL, ITEM_BOOTS_OF_SPEED, ITEM_THIEF_GLOVES]
     return stock

@@ -18,7 +18,7 @@ class TargetShape(Enum):
 
 @dataclass
 class PendingRangedAction:
-    kind: Literal["spell", "thrown_weapon"]
+    kind: Literal["spell", "thrown_weapon", "ranged_weapon"]
     spell: Optional["Spell"] = None
     item: Optional["Item"] = None
     label: str = ""

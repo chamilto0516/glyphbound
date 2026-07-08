@@ -345,3 +345,29 @@ def execute_thrown_attack(player: Player, item: Item, monster: Monster) -> Tuple
     monster.hp = max(0, monster.hp - dmg)
     log.append(f"  Your thrown {item.name} hits for {dmg}! {monster.name} HP: {monster.hp}/{monster.max_hp}")
     return log, monster.hp == 0
+
+
+def execute_ranged_weapon_attack(player: Player, weapon: Item, monster: Monster) -> Tuple[List[str], bool]:
+    """
+    A single shot from a persistent ranged weapon (bow/sling/crossbow/wand) against a
+    non-adjacent monster. Same to-hit/damage resolution as execute_thrown_attack, but the
+    weapon itself is never removed — only the caller's ammo bookkeeping (if any) changes.
+    Returns (log_lines, killed).
+    """
+    log: List[str] = []
+    natural = random.randint(1, 10)
+    if not _attacker_hits(natural, player.attack, monster.defense):
+        log.append(f"  Your {weapon.name} shot sails past the {monster.name}!")
+        return log, False
+    dmg = roll_damage(weapon)
+    undead_bonus = 0
+    if weapon.undead_bonus_sides and monster.is_undead:
+        undead_bonus = sum(
+            random.randint(1, weapon.undead_bonus_sides)
+            for _ in range(weapon.undead_bonus_count)
+        )
+    dmg += undead_bonus
+    monster.hp = max(0, monster.hp - dmg)
+    smite = f" [bold bright_yellow](+{undead_bonus} radiant)[/bold bright_yellow]" if undead_bonus else ""
+    log.append(f"  Your {weapon.name} hits for {dmg}!{smite} {monster.name} HP: {monster.hp}/{monster.max_hp}")
+    return log, monster.hp == 0

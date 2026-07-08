@@ -32,7 +32,7 @@ class CombatResult:
 @dataclass
 class RangedOption:
     label: str
-    kind: str  # "spell" | "thrown_weapon"
+    kind: str  # "spell" | "thrown_weapon" | "ranged_weapon"
     spell: Optional[Spell] = None
     item: Optional[Item] = None
 
