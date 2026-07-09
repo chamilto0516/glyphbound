@@ -73,6 +73,7 @@ def _single_weapon_attack(
 ) -> None:
     """Roll one weapon strike. Mutates monster.hp and appends to log."""
     from .player import CharacterClass
+    from .status_effects import apply_effect, StatusEffect, EffectType
     p_natural = random.randint(1, 10)
     if not _attacker_hits(p_natural, player.attack, monster.defense):
         log.append(f"  Your {label} misses the {monster.name}.")
@@ -111,14 +112,36 @@ def _single_weapon_attack(
         smite = f" [bold bright_yellow](+{undead_bonus} radiant)[/bold bright_yellow]" if undead_bonus else ""
         log.append(f"  Your {label} hits for {dmg}!{smite} {monster.name} HP: {monster.hp}/{monster.max_hp}")
 
+    # Thief Envenom: apply poison if charges remain
+    if player.char_class == CharacterClass.THIEF and player.envenom_charges > 0 and monster.hp > 0:
+        player.envenom_charges -= 1
+        effect = StatusEffect(
+            effect_type=EffectType.POISONED,
+            duration=3,
+            potency=1,
+            source="envenomed blade"
+        )
+        effect_msg = apply_effect(monster, effect)
+        if effect_msg:
+            log.append(f"  {effect_msg}")
+        if player.envenom_charges == 0:
+            log.append("  [dim](Envenom charges exhausted)[/dim]")
+
 
 def execute_player_attack(player: Player, monster: Monster) -> List[str]:
     """Execute one player attack round. Dual-wielding Warriors strike twice. Returns log lines."""
     from .player import CharacterClass
+    from .status_effects import can_cast
     log: List[str] = []
     player_weapon = player.equipped.get(EquipSlot.WEAPON.value)
     spell = _best_damage_spell(player) if player.char_class == CharacterClass.WIZARD else None
+
+    # Wizard auto-cast: check if silenced
+    cast_allowed = True
     if spell:
+        cast_allowed, _ = can_cast(player)
+
+    if spell and cast_allowed:
         msg, dmg = player.cast_spell(spell)
         monster.hp = max(0, monster.hp - dmg)
         log.append(f"  {msg}  {monster.name} HP: {monster.hp}/{monster.max_hp}")
@@ -142,6 +165,7 @@ def execute_player_attack(player: Player, monster: Monster) -> List[str]:
 def execute_monster_attack(player: Player, monster: Monster) -> List[str]:
     """Execute one monster attack round. Mutates player.hp. Returns log lines."""
     from .player import CharacterClass
+    from .status_effects import apply_effect, StatusEffect
     log: List[str] = []
     # Invulnerability blocks all damage; decrement counter
     if player.invuln_active:
@@ -163,6 +187,18 @@ def execute_monster_attack(player: Player, monster: Monster) -> List[str]:
         player.stat_damage_taken += dmg
         wpn_name = monster.weapon.name if monster.weapon else "claws"
         log.append(f"  {monster.name} hits you with {wpn_name} for {dmg}!{toughness_note}{notes} Your HP: {player.hp}/{player.max_hp}")
+
+        # Apply on-hit status effect if configured
+        if monster.on_hit_effect and random.random() < monster.on_hit_chance:
+            effect = StatusEffect(
+                effect_type=monster.on_hit_effect,
+                duration=monster.on_hit_duration,
+                potency=monster.on_hit_potency,
+                source=f"{monster.name} attack"
+            )
+            effect_msg = apply_effect(player, effect)
+            if effect_msg:
+                log.append(f"  {effect_msg}")
     else:
         log.append(f"  {monster.name} misses you.")
     return log

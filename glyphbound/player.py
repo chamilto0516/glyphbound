@@ -7,6 +7,7 @@ from typing import Dict, List, Optional, Tuple
 
 from .items import EquipSlot, Item, ItemKind
 from .spells import Spell, SpellEffect, WIZARD_SPELLS, CLERIC_SPELLS
+from .status_effects import EffectType, StatusEffect
 
 
 class CharacterClass(Enum):
@@ -101,6 +102,9 @@ class Player:
     rage_turns_remaining: int         = 0   # counts down each attack while raging
     rage_used_this_floor: bool        = False  # once per floor
     invuln_turns_remaining: int       = 0   # rounds remaining of scroll invulnerability
+    envenom_charges: int              = 0   # Thief: remaining hits that apply poison
+    envenom_used_this_floor: bool     = False  # once per floor
+    status_effects: Dict[EffectType, StatusEffect] = field(default_factory=dict)  # active status effects
 
     def __post_init__(self) -> None:
         stats = _CLASS_STATS[self.char_class]
@@ -146,8 +150,10 @@ class Player:
 
     @property
     def defense(self) -> int:
+        from .status_effects import get_defense_penalty
         bonus = sum(i.defense_bonus for i in self.equipped.values())
-        return self._base_defense + bonus + self.temp_defense_bonus
+        penalty = get_defense_penalty(self)
+        return max(0, self._base_defense + bonus + self.temp_defense_bonus - penalty)
 
     @property
     def damage_reduction(self) -> int:
@@ -322,6 +328,13 @@ class Player:
         if item.xp_bonus:
             self.xp += item.xp_bonus
             msgs.append(f"+{item.xp_bonus} XP")
+        if item.cures_effect:
+            from .status_effects import remove_effect
+            cure_msg = remove_effect(self, item.cures_effect)
+            if cure_msg:
+                msgs.append(cure_msg)
+            else:
+                msgs.append(f"You have no {item.cures_effect.value} to cure")
         return f"Drank {item.name}. " + ("  ".join(msgs) if msgs else "No effect.")
 
     # ── Spells ─────────────────────────────────────────────────────────────────
@@ -359,6 +372,15 @@ class Player:
             return f"You cast {spell.name}. +{healed} HP restored. (HP: {self.hp}/{self.max_hp})", 0
         if spell.effect == SpellEffect.TURN_UNDEAD:
             return f"You invoke {spell.name}!", 0
+        if spell.effect == SpellEffect.PURIFY:
+            from .status_effects import remove_effect
+            # Remove most harmful effect in priority order
+            priority = [EffectType.POISONED, EffectType.BURNING, EffectType.SILENCED, EffectType.BOUND, EffectType.STUNNED]
+            for etype in priority:
+                if etype in self.status_effects:
+                    msg = remove_effect(self, etype)
+                    return f"You cast {spell.name}! {msg}", 0
+            return f"You cast {spell.name}, but you have no harmful effects to cleanse.", 0
         if spell.effect == SpellEffect.DETECT:
             return f"You cast {spell.name}.", -1  # -1 signals caller to run detect sweep
         if spell.effect == SpellEffect.ILLUMINATE:

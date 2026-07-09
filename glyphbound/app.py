@@ -741,6 +741,7 @@ class GlyphboundApp(App):
         ("i", "inventory",       "Inventory"),
         ("z", "spells",          "Spells"),
         ("r", "rage",            "Rage"),
+        ("e", "envenom",         "Envenom"),
         ("p", "potion",          "Potion"),
         ("c", "scroll",          "Scroll"),
         ("f", "flee",            "Flee"),
@@ -828,6 +829,15 @@ class GlyphboundApp(App):
     def _move(self, dx: int, dy: int) -> None:
         if not self.player:
             return
+
+        # Check if status effects prevent movement
+        from .status_effects import can_move
+        move_allowed, move_msgs = can_move(self.player)
+        if not move_allowed:
+            for msg in move_msgs:
+                self.message_log.add(msg)
+            return
+
         nx, ny = self.dungeon.party_x + dx, self.dungeon.party_y + dy
         monster = self.dungeon.monster_at(nx, ny)
         if monster:
@@ -915,8 +925,23 @@ class GlyphboundApp(App):
         dmg, msg = trap.trigger()
         self.player.hp = max(0, self.player.hp - dmg)
         self.player.stat_damage_taken += dmg
-        self.dungeon.remove_trap(x, y)
         self.message_log.add(msg)
+
+        # Apply status effect if trap has one
+        if trap.applies_effect:
+            from .status_effects import apply_effect, StatusEffect
+            effect_type, duration, potency = trap.applies_effect
+            effect = StatusEffect(
+                effect_type=effect_type,
+                duration=duration,
+                potency=potency,
+                source=trap.name
+            )
+            effect_msg = apply_effect(self.player, effect)
+            if effect_msg:
+                self.message_log.add(f"  {effect_msg}")
+
+        self.dungeon.remove_trap(x, y)
         self.stats_panel.refresh()
         self.map_view.refresh()
         if self.player.hp == 0:
@@ -959,6 +984,15 @@ class GlyphboundApp(App):
     def _bump_attack(self, monster, mx: int, my: int) -> None:
         """Player walks into a monster: one player strike, then the world takes a turn."""
         from .combat import execute_player_attack
+        from .status_effects import can_attack
+
+        # Check if status effects prevent attacking
+        attack_allowed, attack_msgs = can_attack(self.player)
+        if not attack_allowed:
+            for msg in attack_msgs:
+                self.message_log.add(msg)
+            self._resolve_turn()  # turn consumed
+            return
 
         for line in execute_player_attack(self.player, monster):
             self.message_log.add(line)
@@ -1005,6 +1039,13 @@ class GlyphboundApp(App):
         if not self.player or self.player.hp == 0:
             return
         self._monster_turns()
+
+        # Tick player status effects (poison, burning DoT)
+        from .status_effects import tick_effects
+        effect_msgs = tick_effects(self.player)
+        for msg in effect_msgs:
+            self.message_log.add(msg)
+
         self.player.tick_buffs()
         self._decay_combat_buffs()
         self._check_torch_burnout()
@@ -1054,6 +1095,7 @@ class GlyphboundApp(App):
     def _monster_turns(self) -> None:
         """Execute one AI turn for each monster on the map."""
         from .ai import ai_turn
+        from .status_effects import tick_effects, can_move
 
         # Snapshot positions to avoid mutating dict during iteration
         monster_positions = list(self.dungeon.monsters.items())
@@ -1065,6 +1107,22 @@ class GlyphboundApp(App):
             # A dead player ends the turn immediately — no piling on a corpse
             if self.player.hp == 0:
                 return
+
+            # Tick monster status effects (poison, burning DoT may kill)
+            effect_msgs = tick_effects(monster)
+            for msg in effect_msgs:
+                self.message_log.add(msg)
+            if monster.hp <= 0:
+                self._reward_kill(monster, mx, my)
+                continue
+
+            # Check if status effects prevent action (stunned, bound)
+            move_allowed, move_msgs = can_move(monster)
+            for msg in move_msgs:
+                self.message_log.add(msg)
+            if not move_allowed:
+                continue
+
             # Frozen monsters (e.g. after the player flees) lose their turn
             if monster.frozen_turns > 0:
                 monster.frozen_turns -= 1
@@ -1121,6 +1179,15 @@ class GlyphboundApp(App):
             else:
                 parts.append("[dim](R)age used[/dim]")
 
+        # Envenom — Thieves only
+        if p.char_class == CharacterClass.THIEF:
+            if p.envenom_charges > 0:
+                parts.append(f"[bold yellow](E)nvenom:{p.envenom_charges}[/bold yellow]")
+            elif not p.envenom_used_this_floor:
+                parts.append("[bold](E)[/bold]nvenom")
+            else:
+                parts.append("[dim](E)nvenom used[/dim]")
+
         # Spells — casters with at least one affordable spell
         if p.spells:
             can_cast = any(s.mp_cost <= p.mp for s in p.spells)
@@ -1154,6 +1221,18 @@ class GlyphboundApp(App):
             parts.append(f"[bold cyan]ABSORB:{p.damage_absorb}[/bold cyan]")
         if p.temp_defense_turns > 0:
             parts.append(f"[bold cyan]DEF+{p.temp_defense_bonus}({p.temp_defense_turns}t)[/bold cyan]")
+
+        # Status effects
+        from .status_effects import EffectType
+        for etype, effect in p.status_effects.items():
+            color = {
+                EffectType.POISONED: "green",
+                EffectType.STUNNED: "bright_yellow",
+                EffectType.BURNING: "bright_red",
+                EffectType.BOUND: "bright_magenta",
+                EffectType.SILENCED: "dim",
+            }.get(etype, "white")
+            parts.append(f"[{color}]{etype.value.upper()}:{effect.duration}[/{color}]")
 
         # Second line: log scroll + quit hints, always present
         scroll_hint = "[dim](J/K) scroll log   (Q)uit[/dim]"
@@ -1232,12 +1311,34 @@ class GlyphboundApp(App):
         self.message_log.add(self.player.activate_rage())
         self._resolve_turn()
 
+    def action_envenom(self) -> None:
+        if not self._can_act():
+            return
+        if self.player.char_class != CharacterClass.THIEF:
+            return
+        if self.player.envenom_used_this_floor:
+            self.message_log.add("You have already used Envenom this floor.")
+            return
+        self.player.envenom_charges = 3
+        self.player.envenom_used_this_floor = True
+        self.message_log.add("[bold yellow]You coat your blade with poison. Next 3 hits will envenom your foes![/bold yellow]")
+        self._resolve_turn()
+
     def action_spells(self) -> None:
         if not self._can_act():
             return
         if not self.player.spells:
             self.message_log.add("Your class cannot cast spells.")
             return
+
+        # Check if status effects prevent spell casting
+        from .status_effects import can_cast
+        cast_allowed, cast_msgs = can_cast(self.player)
+        if not cast_allowed:
+            for msg in cast_msgs:
+                self.message_log.add(msg)
+            return
+
         self.push_screen(SpellScreen(self.player), callback=self._spell_chosen)
 
     def _spell_chosen(self, spell: Spell | None) -> None:
@@ -1627,6 +1728,10 @@ class GlyphboundApp(App):
             self.player.stat_floors_descended += 1
             self.player.rage_used_this_floor = False
             self.player.rage_turns_remaining = 0
+            self.player.envenom_used_this_floor = False
+            self.player.envenom_charges = 0
+            from .status_effects import remove_all_effects
+            remove_all_effects(self.player)
         # Stairs crumble behind you — each floor is a fresh dungeon, no return.
         self.dungeon = generate_dungeon(floor=next_floor, place_up_stair=False)
         self.map_view.dungeon = self.dungeon

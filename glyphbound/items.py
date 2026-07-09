@@ -2,8 +2,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import TYPE_CHECKING
 
 from .fov import TORCH_RADIUS, SCROLL_RADIUS
+
+if TYPE_CHECKING:
+    from .status_effects import EffectType
 
 
 class ItemKind(Enum):
@@ -64,6 +68,7 @@ class Item:
     ammo_amount: int    = 0      # ammo items: how much ammo a single purchase grants
     wizard_only: bool   = False  # requires Wizard class to equip
     cleric_only: bool   = False  # requires Cleric class to equip
+    cures_effect: "EffectType | None" = None  # potions: status effect removed on use
 
     def __str__(self) -> str:
         parts = [self.name]
@@ -363,6 +368,10 @@ ITEM_POTION_OF_KNOWLEDGE = Item(
     name="Potion of Knowledge", kind=ItemKind.POTION, glyph="!",
     xp_bonus=10, gold_value=35,
 )
+ITEM_ANTIDOTE_POTION = Item(
+    name="Antidote", kind=ItemKind.POTION, glyph="!",
+    gold_value=15,
+)
 
 ITEM_GOLD_PILE_SMALL = Item(
     name="Gold Coins", kind=ItemKind.TREASURE, glyph="$",
@@ -491,7 +500,15 @@ RARE_ACCESSORIES = [
     ITEM_BOOTS_OF_SPEED, ITEM_IRON_BOOTS, ITEM_GAUNTLETS, ITEM_THIEF_GLOVES,
 ]
 
-POTIONS = [ITEM_HEALTH_POTION, ITEM_MANA_POTION, ITEM_POTION_OF_KNOWLEDGE]
+POTIONS = [ITEM_HEALTH_POTION, ITEM_MANA_POTION, ITEM_POTION_OF_KNOWLEDGE, ITEM_ANTIDOTE_POTION]
+
+# Set runtime-only fields that require imports from other modules
+def _init_item_effects():
+    """Called at module load to set cross-module fields like cures_effect."""
+    from .status_effects import EffectType
+    ITEM_ANTIDOTE_POTION.cures_effect = EffectType.POISONED
+
+_init_item_effects()
 ELIXIRS = [ITEM_ELIXIR_VITALITY, ITEM_ELIXIR_CLARITY]
 
 TREASURE = [
@@ -507,7 +524,7 @@ SCROLLS = [ITEM_SCROLL_FIREBALL, ITEM_SCROLL_HEAL, ITEM_SCROLL_INVULNERABILITY, 
 def shop_stock(floor: int) -> list:
     """Return the shop's curated inventory for the given floor depth."""
     # A torch and a scroll of illumination are always for sale — light is a staple.
-    stock = [ITEM_HEALTH_POTION, ITEM_MANA_POTION, ITEM_TORCH, ITEM_SCROLL_ILLUMINATION]
+    stock = [ITEM_HEALTH_POTION, ITEM_MANA_POTION, ITEM_ANTIDOTE_POTION, ITEM_TORCH, ITEM_SCROLL_ILLUMINATION]
     # Basic weapons available from the very first floor so no class is stuck
     # flailing with a starter weapon against early monsters.
     stock += [ITEM_DAGGER, ITEM_STAFF, ITEM_MACE, ITEM_SHORT_SWORD]

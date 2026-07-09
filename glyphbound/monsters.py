@@ -3,7 +3,7 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 from .items import (
     Item,
@@ -14,6 +14,7 @@ from .items import (
     COMMON_WEAPONS, COMMON_ARMOR, RARE_WEAPONS, RARE_ARMOR,
     ACCESSORIES, POTIONS, ELIXIRS,
 )
+from .status_effects import EffectType, StatusEffect
 
 
 class MonsterKind(Enum):
@@ -24,6 +25,7 @@ class MonsterKind(Enum):
     ORC         = "Orc"
     ZOMBIE      = "Zombie"
     BUGBEAR     = "Bugbear"
+    SPIDER      = "Spider"
     # Floor 3+
     TROLL       = "Troll"
     MUMMY       = "Mummy"
@@ -67,6 +69,13 @@ class Monster:
     frozen_turns: int = 0   # >0: skips its AI turn (e.g. after the player flees)
     forced_drops: List[Item] = field(default_factory=list)  # guaranteed drops (e.g. floor-1 torch)
 
+    # Status effects system
+    status_effects: Dict[EffectType, StatusEffect] = field(default_factory=dict)
+    on_hit_effect: Optional[EffectType] = None   # effect applied to player on successful hit
+    on_hit_duration: int = 0                     # turns the effect lasts
+    on_hit_potency: int = 0                      # effect strength (damage, etc.)
+    on_hit_chance: float = 0.0                   # probability (0.0-1.0) to apply on hit
+
     def drop_loot(self) -> List[Item]:
         """Generate random loot on death."""
         loot: List[Item] = list(self.forced_drops)
@@ -99,6 +108,11 @@ class Monster:
             if random.random() < 0.25:
                 loot.append(random.choice(COMMON_WEAPONS + COMMON_ARMOR))
             if random.random() < 0.10:
+                loot.append(random.choice(POTIONS))
+
+        elif k == MonsterKind.SPIDER:
+            loot.append(ITEM_GOLD_PILE_SMALL)
+            if random.random() < 0.15:
                 loot.append(random.choice(POTIONS))
 
         elif k == MonsterKind.TROLL:
@@ -208,6 +222,16 @@ def spawn_bugbear() -> Monster:
     )
 
 
+def spawn_spider() -> Monster:
+    return Monster(
+        kind=MonsterKind.SPIDER, name="Spider", glyph="s",
+        hp=10, max_hp=10, attack=3, defense=2, xp_value=3,
+        min_floor=2, weapon=None,  # venomous bite
+        ai_state=AIState.WANDER, chase_range=7,
+        on_hit_effect=EffectType.POISONED, on_hit_duration=4, on_hit_potency=2, on_hit_chance=0.30,
+    )
+
+
 # ── Floor 3+ ───────────────────────────────────────────────────────────────────
 
 def spawn_troll() -> Monster:
@@ -245,6 +269,7 @@ def spawn_owlbear() -> Monster:
         hp=30, max_hp=30, attack=7, defense=4, xp_value=12,
         min_floor=4, weapon=None,  # attacks with claws/beak
         ai_state=AIState.GUARD, chase_range=7, guard_range=6,
+        on_hit_effect=EffectType.STUNNED, on_hit_duration=1, on_hit_potency=0, on_hit_chance=0.20,
     )
 
 
@@ -254,6 +279,7 @@ def spawn_wraith() -> Monster:
         hp=22, max_hp=22, attack=7, defense=5, xp_value=14,
         min_floor=4, is_undead=True, weapon=None,
         ai_state=AIState.WANDER, chase_range=10,
+        on_hit_effect=EffectType.SILENCED, on_hit_duration=3, on_hit_potency=0, on_hit_chance=0.15,
     )
 
 
@@ -265,6 +291,7 @@ def spawn_umber_hulk() -> Monster:
         hp=40, max_hp=40, attack=8, defense=5, xp_value=18,
         min_floor=5, weapon=None,  # massive claws
         ai_state=AIState.GUARD, chase_range=7, guard_range=6,
+        on_hit_effect=EffectType.STUNNED, on_hit_duration=1, on_hit_potency=0, on_hit_chance=0.25,
     )
 
 
@@ -285,6 +312,7 @@ def spawn_dragon() -> Monster:
         hp=60, max_hp=60, attack=12, defense=8, xp_value=50,
         min_floor=7, weapon=None,  # claws and fire breath flavour
         ai_state=AIState.GUARD, chase_range=10, guard_range=10,
+        on_hit_effect=EffectType.BURNING, on_hit_duration=3, on_hit_potency=3, on_hit_chance=0.30,
     )
 
 
@@ -297,6 +325,7 @@ ALL_SPAWNERS = [
     spawn_orc,          # floor 2+
     spawn_zombie,       # floor 2+
     spawn_bugbear,      # floor 2+
+    spawn_spider,       # floor 2+
     spawn_troll,        # floor 3+
     spawn_mummy,        # floor 3+
     spawn_wight,        # floor 3+

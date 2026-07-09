@@ -17,6 +17,7 @@ class SpellEffect(Enum):
     DETECT      = "detect"      # reveals items/monsters in nearby rooms
     BLINK       = "blink"       # teleport short distance (escape combat)
     ILLUMINATE  = "illuminate"  # lights the whole floor for its duration
+    PURIFY      = "purify"      # removes harmful status effects
 
 
 @dataclass
@@ -223,6 +224,14 @@ SPELL_SANCTUARY = Spell(
     description="Divine protection. +2 DEF for 3 turns.",
 )
 
+SPELL_PURIFY = Spell(
+    name="Purify",
+    mp_cost=3,
+    effect=SpellEffect.PURIFY,
+    min_level=2,
+    description="Cleanse the body. Removes one harmful status effect.",
+)
+
 SPELL_TURN_UNDEAD = Spell(
     name="Turn Undead",
     mp_cost=5,
@@ -281,6 +290,7 @@ CLERIC_SPELLS = [
     SPELL_SMITE,
     SPELL_BLESS,
     SPELL_SANCTUARY,
+    SPELL_PURIFY,
     SPELL_TURN_UNDEAD,
     SPELL_LIGHT_FROM_HEAVEN,
     SPELL_GREATER_HEAL,
