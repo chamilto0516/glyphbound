@@ -63,6 +63,7 @@ class Dungeon:
     items: Dict[Tuple[int, int], List["Item"]] = field(default_factory=dict)
     monsters: Dict[Tuple[int, int], "Monster"] = field(default_factory=dict)
     traps: Dict[Tuple[int, int], "Trap"] = field(default_factory=dict)
+    boss: Optional["Monster"] = None  # the milestone boss on this floor, if any
 
     # ── Lighting / field of view (per floor) ─────────────────────────────────
     ambient_light_radius: int = 0   # set by Scroll/Spell of Illumination; 0 = none
@@ -387,6 +388,20 @@ def generate_dungeon(seed: int = None, theme: "Theme | None" = None, floor: int 
         logger.info("monster %s '%s' hp%d atk%d def%d xp%d at %s",
                     m.name, m.glyph, m.hp, m.attack, m.defense, m.xp_value, (mx, my))
         monster_count += 1
+
+    # Place a milestone boss guarding the down-stair on floors 3/5/10.
+    from .bosses import BOSS_FLOORS, pick_boss
+    if floor in BOSS_FLOORS:
+        boss_spot = dungeon.find_spawn_tile(dx, dy)
+        if boss_spot is not None:
+            bx, by = boss_spot
+            boss = pick_boss(theme.name, floor)
+            boss.spawn_x, boss.spawn_y = bx, by
+            dungeon.place_monster(bx, by, boss)
+            dungeon.boss = boss
+            logger.info("boss %s '%s' hp%d atk%d def%d xp%d at %s guarding stairs at %s",
+                        boss.name, boss.glyph, boss.hp, boss.attack, boss.defense,
+                        boss.xp_value, (bx, by), (dx, dy))
 
     # Place traps: 2–5 traps per floor, scattered across non-start rooms
     from .traps import TRAP_MAKERS

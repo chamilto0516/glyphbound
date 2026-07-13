@@ -204,6 +204,37 @@ def execute_monster_attack(player: Player, monster: Monster) -> List[str]:
     return log
 
 
+def execute_monster_aoe(player: Player, monster: Monster) -> List[str]:
+    """Execute one boss AoE blast against the player. Auto-hits (no to-hit roll),
+    but still runs through _mitigate so armor/absorb reduce it. Mutates player.hp.
+    Returns log lines.
+    """
+    from .status_effects import apply_effect, StatusEffect
+    log: List[str] = []
+    if player.invuln_active:
+        player.invuln_turns_remaining -= 1
+        fade = " [dim](Invulnerability fades)[/dim]" if not player.invuln_active else ""
+        log.append(f"  {monster.name} unleashes a blast — but you are invulnerable!{fade}")
+        return log
+    dmg = sum(random.randint(1, monster.aoe_sides) for _ in range(monster.aoe_count))
+    dmg, notes = _mitigate(player, dmg)
+    player.hp = max(0, player.hp - dmg)
+    player.stat_damage_taken += dmg
+    log.append(f"  [bold red]{monster.name} unleashes a blast for {dmg}!{notes}[/bold red] Your HP: {player.hp}/{player.max_hp}")
+
+    if monster.aoe_effect:
+        effect = StatusEffect(
+            effect_type=monster.aoe_effect,
+            duration=monster.on_hit_duration or 2,
+            potency=monster.on_hit_potency,
+            source=f"{monster.name} blast",
+        )
+        effect_msg = apply_effect(player, effect)
+        if effect_msg:
+            log.append(f"  {effect_msg}")
+    return log
+
+
 def execute_flee_attempt(player: Player, monster: Monster) -> Tuple[List[str], bool]:
     """Flee attempt. Thief: min 50% + 5%/level (cap 100%). Others: 25%. On failure, monster attacks."""
     from .player import CharacterClass

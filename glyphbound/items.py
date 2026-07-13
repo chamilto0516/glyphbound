@@ -479,6 +479,38 @@ ITEM_STARLIT_HELM = Item(
     is_unique=True, light_radius=10,
 )
 
+# ── Boss-exclusive Unique Items (milestone drops) ────────────────────────────
+ITEM_QUILL_OF_UNBINDING = Item(
+    name="Quill of Unbinding", kind=ItemKind.WEAPON, glyph="/",
+    attack_bonus=4, gold_value=140, equip_slot=EquipSlot.WEAPON,
+    damage_sides=8, damage_count=1,   # 1d8 arcane
+    is_unique=True, wizard_only=True,
+)
+ITEM_DUNGEONHEART_AMULET = Item(
+    name="Dungeonheart Amulet", kind=ItemKind.ARMOR, glyph="\"",
+    hp_bonus=8, mp_bonus=5, gold_value=200, equip_slot=EquipSlot.AMULET,
+    is_unique=True,
+)
+ITEM_WARDENS_MANACLE = Item(
+    name="Warden's Manacle", kind=ItemKind.ARMOR, glyph="[",
+    defense_bonus=2, gold_value=150, equip_slot=EquipSlot.GLOVES,
+    is_unique=True,
+)
+ITEM_BONECHOIR_CENSER = Item(
+    name="Bonechoir Censer", kind=ItemKind.WEAPON, glyph="/",
+    attack_bonus=4, gold_value=160, equip_slot=EquipSlot.WEAPON,
+    damage_sides=8, damage_count=1,   # 1d8
+    undead_bonus_sides=6, undead_bonus_count=1,  # +1d6 radiant vs undead
+    is_unique=True, cleric_only=True,
+)
+ITEM_SIGIL_CARVED_DAGGER = Item(
+    name="Sigil-Carved Dagger", kind=ItemKind.WEAPON, glyph="/",
+    attack_bonus=4, gold_value=150, equip_slot=EquipSlot.WEAPON,
+    damage_sides=6, damage_count=1,   # 1d6
+    backstab_bonus=0.15,
+    is_unique=True, thief_only=True,
+)
+
 # ── Loot Pools ─────────────────────────────────────────────────────────────────
 
 COMMON_WEAPONS = [ITEM_DAGGER, ITEM_SHORT_SWORD, ITEM_STAFF, ITEM_MACE]

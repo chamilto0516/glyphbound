@@ -836,6 +836,7 @@ class GlyphboundApp(App):
         if not move_allowed:
             for msg in move_msgs:
                 self.message_log.add(msg)
+            self._resolve_turn()  # turn consumed — lets the block itself tick down
             return
 
         nx, ny = self.dungeon.party_x + dx, self.dungeon.party_y + dy
@@ -1128,6 +1129,10 @@ class GlyphboundApp(App):
                 monster.frozen_turns -= 1
                 continue
 
+            # Boss special abilities (summon/AoE) pre-empt normal movement/melee
+            if self._monster_special(monster, mx, my):
+                continue
+
             new_pos = ai_turn(self.dungeon, monster, mx, my)
             if not new_pos:
                 continue
@@ -1146,6 +1151,71 @@ class GlyphboundApp(App):
         for line in execute_monster_attack(self.player, monster):
             self.message_log.add(line)
         self._combat_damage_taken += max(0, hp_before - self.player.hp)
+
+    def _monster_special(self, monster, mx: int, my: int) -> bool:
+        """Boss ability engine: phase change, Summon, AoE. Returns True if the
+        monster's turn was consumed by an ability (caller should skip normal
+        move/melee); False means fall through to ai_turn as usual.
+        """
+        if not monster.is_boss:
+            return False
+
+        from .ai import manhattan_distance
+        from .combat import execute_monster_aoe
+
+        # Cooldowns tick down every world turn regardless of engagement.
+        if monster.summon_cooldown > 0:
+            monster.summon_cooldown -= 1
+        if monster.aoe_cooldown > 0:
+            monster.aoe_cooldown -= 1
+
+        # Phase change: a one-time buff once HP drops to/below the threshold.
+        if (monster.phase_threshold and not monster.phase_triggered
+                and monster.hp <= monster.max_hp * monster.phase_threshold):
+            monster.phase_triggered = True
+            monster.attack = int(monster.attack * 1.3)
+            monster.summon_cooldown = 0
+            monster.aoe_cooldown = 0
+            self.message_log.add(
+                f"[bold magenta]{monster.name} shudders and enters a new phase![/bold magenta]"
+            )
+
+        px, py = self.dungeon.party_x, self.dungeon.party_y
+        dist = manhattan_distance(mx, my, px, py)
+        if dist > monster.chase_range:
+            return False  # not engaged — abilities only fire once the fight is on
+
+        if (monster.summon_spawner and monster.summon_cooldown == 0
+                and (monster.summon_max == 0 or monster.summoned_so_far < monster.summon_max)):
+            to_spawn = min(monster.summon_count, monster.summon_max - monster.summoned_so_far) \
+                if monster.summon_max else monster.summon_count
+            spawned = []
+            for _ in range(max(0, to_spawn)):
+                spot = self.dungeon.find_spawn_tile(mx, my, radius=3)
+                if spot is None:
+                    break
+                sx, sy = spot
+                add = monster.summon_spawner()
+                add.spawn_x, add.spawn_y = sx, sy
+                self.dungeon.place_monster(sx, sy, add)
+                spawned.append(add.name)
+                monster.summoned_so_far += 1
+            if spawned:
+                monster.summon_cooldown = monster.summon_cooldown_max
+                self.message_log.add(
+                    f"[bold]{monster.name} calls forth {', '.join(spawned)}![/bold]"
+                )
+                return True
+
+        if monster.aoe_range and monster.aoe_cooldown == 0 and dist <= monster.aoe_range:
+            hp_before = self.player.hp
+            for line in execute_monster_aoe(self.player, monster):
+                self.message_log.add(line)
+            self._combat_damage_taken += max(0, hp_before - self.player.hp)
+            monster.aoe_cooldown = monster.aoe_cooldown_max
+            return True
+
+        return False
 
     # ── Action bar ───────────────────────────────────────────────────────────
 
@@ -1747,6 +1817,12 @@ class GlyphboundApp(App):
             self.message_log.add(
                 f"Floor {self.dungeon.floor} — entering the {self.dungeon.theme.name}."
             )
+            boss = self.dungeon.boss
+            if boss is not None:
+                title = f" — {boss.boss_title}" if boss.boss_title else ""
+                self.message_log.add(
+                    f"[bold red]{boss.name}{title} guards the way down.[/bold red]"
+                )
 
     def _enter_shop(self) -> None:
         self.message_log.add("[bold yellow]You step into the merchant's stall.[/bold yellow]")

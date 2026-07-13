@@ -3,7 +3,7 @@ from __future__ import annotations
 import random
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 from .items import (
     Item,
@@ -38,6 +38,20 @@ class MonsterKind(Enum):
     VAMPIRE     = "Vampire"
     # Floor 7+
     DRAGON      = "Dragon"
+
+    # ── Bosses (floors 3/5/10; never in ALL_SPAWNERS) ───────────────────────
+    INK_WRAITH_LESSER          = "Ink Wraith"
+    UNBOUND_INDEX_GREATER      = "The Unbound Index"
+    GNASHING_MAW_LESSER        = "Gnashing Maw"
+    HEART_OF_DUNGEON_GREATER   = "Heart of the Dungeon"
+    WARDENS_SHADE_LESSER       = "Warden's Shade"
+    BROKEN_CHAIN_GREATER       = "Broken-Chain Colossus"
+    BONE_CHOIR_LESSER          = "Bone Choir"
+    LICH_CANTOR_GREATER        = "The Lich Cantor"
+    SIGIL_ACOLYTE_LESSER       = "Acolyte of the Sigil"
+    SIGIL_INCARNATE_GREATER    = "The Sigil Incarnate"
+    BROODMOTHER_LESSER         = "Broodmother"
+    STONE_TYRANT_GREATER       = "The Stone Tyrant"
 
 
 class AIState(Enum):
@@ -75,6 +89,30 @@ class Monster:
     on_hit_duration: int = 0                     # turns the effect lasts
     on_hit_potency: int = 0                      # effect strength (damage, etc.)
     on_hit_chance: float = 0.0                   # probability (0.0-1.0) to apply on hit
+
+    # Boss framework
+    is_boss: bool = False
+    boss_title: str = ""                 # flavor subtitle for the intro banner
+
+    # Phase change: buffs the boss once HP drops to/below phase_threshold
+    phase_threshold: float = 0.0         # HP fraction (0 = no phase change)
+    phase_triggered: bool = False        # runtime flag
+
+    # Summon ability: periodically spawns adds near the boss
+    summon_spawner: Optional[Callable[[], "Monster"]] = None
+    summon_count: int = 0                # adds spawned per trigger
+    summon_max: int = 0                  # lifetime cap on adds (0 = none)
+    summoned_so_far: int = 0             # runtime counter
+    summon_cooldown_max: int = 0
+    summon_cooldown: int = 0             # runtime counter
+
+    # AoE ability: auto-hit blast on the player, bypassing to-hit rolls
+    aoe_range: int = 0                   # Chebyshev distance; 0 = no AoE
+    aoe_sides: int = 0
+    aoe_count: int = 1
+    aoe_effect: Optional[EffectType] = None
+    aoe_cooldown_max: int = 0
+    aoe_cooldown: int = 0                # runtime counter
 
     def drop_loot(self) -> List[Item]:
         """Generate random loot on death."""
