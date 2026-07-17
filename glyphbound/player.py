@@ -386,7 +386,7 @@ class Player:
         if spell.effect == SpellEffect.ILLUMINATE:
             return f"You cast {spell.name}! Light fills the floor.", -2  # -2 signals caller to light the floor
         if spell.effect == SpellEffect.BLINK:
-            return f"You cast {spell.name}. (Blink not yet implemented.)", 0
+            return f"You cast {spell.name}.", -3  # -3 signals caller to teleport the player
         return f"Cast {spell.name}.", 0
 
     # ── Per-move tick ──────────────────────────────────────────────────────────

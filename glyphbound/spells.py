@@ -98,10 +98,10 @@ SPELL_DETECT_MAGIC = Spell(
 
 SPELL_BLINK = Spell(
     name="Blink",
-    mp_cost=4,
+    mp_cost=5,
     effect=SpellEffect.BLINK,
     min_level=1,
-    description="Teleport 3-5 tiles away. Can escape combat.",
+    description="Teleport clear of nearby monsters (~6 tiles) to escape melee and keep casting.",
 )
 
 SPELL_FIREBALL = Spell(

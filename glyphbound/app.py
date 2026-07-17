@@ -1436,8 +1436,72 @@ class GlyphboundApp(App):
             self.dungeon.ambient_light_radius = max(
                 self.dungeon.ambient_light_radius, spell.light_radius
             )
+        elif sentinel == -3:
+            self._resolve_blink()
 
         self._resolve_turn()
+
+    # ── Blink ──────────────────────────────────────────────────────────────────
+
+    BLINK_DESIRED_GAP = 6    # tiles we'd like between the caster and the nearest monster
+    BLINK_SEARCH_RADIUS = 12  # how far the blink can reach from the caster
+
+    def _resolve_blink(self) -> None:
+        """Teleport the caster to open floor that puts distance between them and
+        every monster — ideally ~BLINK_DESIRED_GAP tiles from the nearest one so
+        a fragile caster can break melee and keep kiting with spells/ranged.
+
+        Searches floor tiles within BLINK_SEARCH_RADIUS (Chebyshev) and lands on
+        the one that best maximizes the gap to the nearest monster, preferring
+        the shortest hop that reaches the desired gap. FLOOR-only so we never
+        drop the player onto stairs (which would descend) or the shop. FOV is
+        recomputed on the map refresh that _resolve_turn triggers.
+        """
+        from .dungeon import FLOOR
+
+        d = self.dungeon
+        px, py = d.party_x, d.party_y
+        monsters = list(d.monsters.keys())
+
+        def cheb(ax: int, ay: int, bx: int, by: int) -> int:
+            return max(abs(ax - bx), abs(ay - by))
+
+        best: "tuple[int, int] | None" = None
+        best_score: "tuple[int, int] | None" = None
+        r = self.BLINK_SEARCH_RADIUS
+        for oy in range(-r, r + 1):
+            for ox in range(-r, r + 1):
+                tx, ty = px + ox, py + oy
+                if (tx, ty) == (px, py):
+                    continue
+                if d.tile_at(tx, ty) != FLOOR:
+                    continue
+                if (tx, ty) in d.monsters:
+                    continue
+                if monsters:
+                    nearest = min(cheb(tx, ty, mx, my) for mx, my in monsters)
+                else:
+                    nearest = r  # no threats — any hop is equally "safe"
+                blink_len = cheb(px, py, tx, ty)
+                # Maximize the gap (capped at desired so we don't overshoot),
+                # then take the shortest hop that achieves it.
+                score = (min(nearest, self.BLINK_DESIRED_GAP), -blink_len)
+                if best_score is None or score > best_score:
+                    best_score = score
+                    best = (tx, ty)
+
+        if best is None:
+            self.message_log.add("The blink fizzles — there is nowhere to reappear.")
+            return
+
+        d.party_x, d.party_y = best
+        if monsters:
+            nearest = min(cheb(best[0], best[1], mx, my) for mx, my in monsters)
+            self.message_log.add(
+                f"You blink through space! The nearest creature is now {nearest} tiles away."
+            )
+        else:
+            self.message_log.add("You blink across the chamber.")
 
     # ── Ranged targeting ──────────────────────────────────────────────────────
 
